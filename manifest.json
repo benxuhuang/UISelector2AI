@@ -1,0 +1,72 @@
+{
+  "manifest_version": 3,
+  "name": "UISelector2AI",
+  "version": "1.0",
+  "description": "UISelector2AI extracts CSS selectors and HTML and converts them into AI-ready prompts for updating UI code or tests.",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "sidePanel"
+  ],
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "src/content.js"
+      ],
+      "css": [
+        "src/styles.css"
+      ]
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "src/sidepanel/sidepanel.html"
+  },
+  "commands": {
+    "toggle_inspect": {
+      "suggested_key": {
+        "default": "Alt+O",
+        "mac": "Command+O",
+        "windows": "Alt+O",
+        "linux": "Alt+O"
+      },
+      "description": "Toggle Inspect Mode"
+    },
+    "open_side_panel": {
+      "suggested_key": {
+        "default": "Alt+L",
+        "mac": "Command+L",
+        "windows": "Alt+L",
+        "linux": "Alt+L"
+      },
+      "description": "Toggle Side Panel"
+    },
+    "clear_annotations": {
+      "suggested_key": {
+        "default": "Alt+X",
+        "mac": "Command+X",
+        "windows": "Alt+X",
+        "linux": "Alt+X"
+      },
+      "description": "Clear Annotations"
+    }
+  }
+}

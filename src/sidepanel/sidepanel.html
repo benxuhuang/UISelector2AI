@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Annotations Side Panel</title>
+    <link rel="stylesheet" href="../ui.css">
+    <style>
+        body {
+            /* Side panel specific layout */
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            padding: 0;
+            background-color: var(--bg);
+        }
+
+        header {
+            padding: var(--space-4);
+            border-bottom: 1px solid var(--border);
+            background-color: var(--surface);
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        h2 {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text);
+            margin: 0;
+        }
+
+        #annotationList {
+            flex: 1;
+            padding: var(--space-4);
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-3);
+        }
+
+        footer {
+            padding: var(--space-4);
+            border-top: 1px solid var(--border);
+            background-color: var(--surface);
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-2);
+        }
+
+        /* Toast override for sidepanel context */
+        #toast {
+            width: fit-content;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <h2>Annotations</h2>
+    </header>
+
+    <div id="annotationList">
+        <!-- JS injects cards here -->
+    </div>
+
+    <footer>
+        <button id="exportBtn" class="btn btn-primary">
+            <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+                <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+            </svg>
+            Copy Prompt
+        </button>
+        <button id="clearBtn" class="btn btn-ghost hover:bg-red-50 hover:text-red-600" style="color: var(--danger);">
+            <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                <path d="M3 6h18" />
+                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                <line x1="10" x2="10" y1="11" y2="17" />
+                <line x1="14" x2="14" y1="11" y2="17" />
+            </svg>
+            Clear All
+        </button>
+    </footer>
+
+    <div id="toast" class="toast">Copy successful</div>
+    <script src="sidepanel.js"></script>
+</body>
+
+</html>
