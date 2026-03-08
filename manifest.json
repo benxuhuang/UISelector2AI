@@ -44,7 +44,7 @@
     "toggle_inspect": {
       "suggested_key": {
         "default": "Alt+O",
-        "mac": "Command+O",
+        "mac": "MacCtrl+Shift+O",
         "windows": "Alt+O",
         "linux": "Alt+O"
       },
@@ -53,7 +53,7 @@
     "open_side_panel": {
       "suggested_key": {
         "default": "Alt+L",
-        "mac": "Command+L",
+        "mac": "MacCtrl+Shift+L",
         "windows": "Alt+L",
         "linux": "Alt+L"
       },
@@ -62,7 +62,7 @@
     "clear_annotations": {
       "suggested_key": {
         "default": "Alt+X",
-        "mac": "Command+X",
+        "mac": "MacCtrl+Shift+X",
         "windows": "Alt+X",
         "linux": "Alt+X"
       },

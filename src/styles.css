@@ -150,3 +150,47 @@
 .agentation-btn-primary:hover {
     background: #3367d6;
 }
+
+@media (prefers-color-scheme: dark) {
+    .agentation-badge {
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
+    }
+
+    [data-agentation-annotated="true"] {
+        outline-color: #60a5fa !important;
+    }
+
+    .agentation-modal {
+        background: #1e293b;
+        border-color: #334155;
+        color: #f1f5f9;
+    }
+
+    .agentation-modal-header {
+        color: #94a3b8;
+        border-bottom-color: #334155;
+    }
+
+    .agentation-modal-code {
+        background: #334155;
+        color: #94a3b8;
+    }
+
+    .agentation-modal-textarea {
+        background: #0f172a;
+        border-color: #475569;
+        color: #f1f5f9;
+    }
+
+    .agentation-modal-textarea:focus {
+        border-color: #3b82f6;
+    }
+
+    .agentation-btn-cancel {
+        color: #94a3b8;
+    }
+
+    .agentation-btn-cancel:hover {
+        background: #334155;
+    }
+}
