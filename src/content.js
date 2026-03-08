@@ -120,8 +120,10 @@ class AgentationContentScript {
                 this.playSound('off');
             }
 
-            // Handle Alt+C for copy prompt
-            if (e.altKey && (e.key === 'c' || e.key === 'C')) {
+            // Handle Alt+C (Option+C on Mac) for copy prompt
+            // Use e.code because on Mac, Option+C produces 'ç' as e.key
+            if (e.altKey && e.code === 'KeyC') {
+                e.preventDefault();
                 this.copyPromptToClipboard();
             }
         });
@@ -155,6 +157,21 @@ class AgentationContentScript {
             } else if (request.action === 'getPrompt') {
                 const prompt = this.generatePromptText();
                 sendResponse({ status: 'ok', prompt: prompt });
+            } else if (request.action === 'annotationsUpdated') {
+                this.loadAnnotations();
+                sendResponse({ status: 'ok' });
+            } else if (request.action === 'editAnnotation') {
+                const index = request.index;
+                const ant = this.annotations[index];
+                if (ant) {
+                    const el = document.querySelector(ant.selector);
+                    if (el) {
+                        // Scroll the element into view first; the delay lets the animation finish before opening the modal
+                        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        setTimeout(() => this.openModal(el, ant, index), 300);
+                    }
+                }
+                sendResponse({ status: 'ok' });
             }
         });
 
@@ -230,6 +247,7 @@ class AgentationContentScript {
             output += `**Target**: \`${ant.selector}\`\n`;
             output += `**Feedback**: ${ant.feedback}\n`;
             output += `**TagName**: ${ant.tagName}\n`;
+            if (ant.content) output += `**Inner Content**: ${ant.content}\n`;
         });
         return output;
     }
@@ -316,7 +334,7 @@ class AgentationContentScript {
                     const ant = this.annotations[index];
                     const el = document.querySelector(ant.selector); // Re-query element
                     if (el) {
-                        this.openModal(el, ant, index);
+                        this.openModal(el, ant, index, e.clientX, e.clientY);
                         e.preventDefault();
                         e.stopPropagation();
                     }
@@ -330,7 +348,7 @@ class AgentationContentScript {
         e.stopPropagation();
 
         if (this.hoveredElement) {
-            this.openModal(this.hoveredElement);
+            this.openModal(this.hoveredElement, null, -1, e.clientX, e.clientY);
         }
     }
 
@@ -408,7 +426,8 @@ class AgentationContentScript {
         return path.join(' > ');
     }
 
-    openModal(element, existingAnnotation = null, existingIndex = -1) {
+    // clickX/clickY position the modal next to the cursor, giving better spatial context than anchoring it to the element's bounding box
+    openModal(element, existingAnnotation = null, existingIndex = -1, clickX = null, clickY = null) {
         // Close existing
         if (this.activeModal) {
             this.activeModal.host.remove();
@@ -432,19 +451,38 @@ class AgentationContentScript {
         // Create iframe for complete isolation from other extensions
         const iframe = document.createElement('iframe');
         iframe.id = 'agentation-modal-iframe';
-        iframe.style.cssText = 'position:fixed;width:320px;height:220px;border:none;z-index:2147483647;background:transparent;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,0.25);';
+        // Detect OS dark mode to adapt the iframe shadow; a black shadow is invisible on dark backgrounds
+        const darkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const modalShadow = darkMode
+            ? '0 8px 30px rgba(200,200,200,0.15), 0 0 0 1px rgba(255,255,255,0.08)'
+            : '0 8px 30px rgba(0,0,0,0.25)';
+        iframe.style.cssText = `position:fixed;width:320px;height:220px;border:none;z-index:2147483647;background:transparent;border-radius:12px;box-shadow:${modalShadow};`;
 
         document.body.appendChild(iframe);
 
-        // Position iframe near element
-        const rect = element.getBoundingClientRect();
-        let left = rect.right + 10;
-        let top = rect.top;
-        if (left + 320 > window.innerWidth) left = rect.left - 320 - 10;
-        if (left < 10) { left = rect.left; top = rect.bottom + 10; }
-        if (top + 220 > window.innerHeight) top = window.innerHeight - 220 - 10;
-        if (top < 10) top = 10;
-        if (left < 10) left = 10;
+        // Position iframe at click coordinates, or fallback to element position
+        const modalW = 320;
+        const modalH = 220;
+        const pad = 10;
+        let left, top;
+
+        if (clickX != null && clickY != null) {
+            left = clickX + pad;
+            top = clickY + pad;
+            if (left + modalW > window.innerWidth) left = clickX - modalW - pad;
+            if (top + modalH > window.innerHeight) top = clickY - modalH - pad;
+        } else {
+            const rect = element.getBoundingClientRect();
+            left = rect.right + pad;
+            top = rect.top;
+            if (left + modalW > window.innerWidth) left = rect.left - modalW - pad;
+            if (left < pad) { left = rect.left; top = rect.bottom + pad; }
+        }
+
+        if (top + modalH > window.innerHeight) top = window.innerHeight - modalH - pad;
+        if (top < pad) top = pad;
+        if (left < pad) left = pad;
+        if (left + modalW > window.innerWidth) left = window.innerWidth - modalW - pad;
         iframe.style.top = top + 'px';
         iframe.style.left = left + 'px';
 
@@ -452,10 +490,27 @@ class AgentationContentScript {
         const safeSelector = selector.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         const safeFeedback = feedback.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+        const isDark = darkMode;
+        const c = isDark ? {
+            bg: '#1e293b', text: '#f1f5f9', muted: '#94a3b8',
+            border: '#334155', inputBg: '#0f172a', inputBorder: '#475569',
+            codeBg: '#334155', focus: '#3b82f6',
+            cancelBg: '#334155', cancelText: '#94a3b8',
+            removeBg: 'rgba(248,113,113,0.15)', removeText: '#f87171',
+            removeBgHover: 'rgba(248,113,113,0.25)',
+        } : {
+            bg: 'white', text: '#333', muted: '#666',
+            border: '#f0f0f0', inputBg: 'white', inputBorder: '#ddd',
+            codeBg: '#f5f5f5', focus: '#4285f4',
+            cancelBg: '#f5f5f5', cancelText: '#666',
+            removeBg: '#ffebee', removeText: '#d93025',
+            removeBgHover: '#ffcdd2',
+        };
+
         const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
         iframeDoc.open();
         const removeBtnStyle = existingIndex !== -1 ? '' : 'display:none;';
-        iframeDoc.write(`<!DOCTYPE html><html><head><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'Segoe UI',Tahoma,sans-serif;padding:16px;background:white;border-radius:12px;}.header{font-size:12px;color:#666;border-bottom:1px solid #f0f0f0;padding-bottom:8px;margin-bottom:12px;}.code{background:#f5f5f5;padding:2px 6px;border-radius:4px;font-family:monospace;font-size:11px;display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}textarea{width:100%;height:80px;padding:8px;border:1px solid #ddd;border-radius:6px;resize:none;font-family:inherit;font-size:14px;outline:none;margin-bottom:12px;}textarea:focus{border-color:#4285f4;}.footer{display:flex;align-items:center;}.footer-right{display:flex;gap:8px;margin-left:auto;}button{padding:8px 16px;border-radius:6px;border:none;cursor:pointer;font-size:13px;font-weight:500;}.cancel-btn{background:#f5f5f5;color:#666;}.cancel-btn:hover{background:#e0e0e0;}.add-btn{background:#4285f4;color:white;}.add-btn:hover{background:#3367d6;}.remove-btn{background:#ffebee;color:#d93025;padding:8px 12px;}.remove-btn:hover{background:#ffcdd2;}</style></head><body><div class="header"><span class="code">${safeSelector}</span></div><textarea id="feedback" placeholder="Enter your feedback here...">${safeFeedback}</textarea><div class="footer"><button class="remove-btn" id="removeBtn" style="${removeBtnStyle}">Remove</button><div class="footer-right"><button class="cancel-btn" id="cancelBtn">Cancel</button><button class="add-btn" id="addBtn">Save</button></div></div></body></html>`);
+        iframeDoc.write(`<!DOCTYPE html><html><head><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'Segoe UI',Tahoma,sans-serif;padding:16px;background:${c.bg};color:${c.text};border-radius:12px;}.header{font-size:12px;color:${c.muted};border-bottom:1px solid ${c.border};padding-bottom:8px;margin-bottom:12px;}.code{background:${c.codeBg};color:${c.muted};padding:2px 6px;border-radius:4px;font-family:monospace;font-size:11px;display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}textarea{width:100%;height:80px;padding:8px;border:1px solid ${c.inputBorder};border-radius:6px;resize:none;font-family:inherit;font-size:14px;outline:none;margin-bottom:12px;background:${c.inputBg};color:${c.text};}textarea:focus{border-color:${c.focus};}.footer{display:flex;align-items:center;}.footer-right{display:flex;gap:8px;margin-left:auto;}button{padding:8px 16px;border-radius:6px;border:none;cursor:pointer;font-size:13px;font-weight:500;}.cancel-btn{background:${c.cancelBg};color:${c.cancelText};}.cancel-btn:hover{background:${isDark ? '#475569' : '#e0e0e0'};}.add-btn{background:#4285f4;color:white;}.add-btn:hover{background:#3367d6;}.remove-btn{background:${c.removeBg};color:${c.removeText};padding:8px 12px;}.remove-btn:hover{background:${c.removeBgHover};}</style></head><body><div class="header"><span class="code">${safeSelector}</span></div><textarea id="feedback" placeholder="Enter your feedback here...">${safeFeedback}</textarea><div class="footer"><button class="remove-btn" id="removeBtn" style="${removeBtnStyle}">Remove</button><div class="footer-right"><button class="cancel-btn" id="cancelBtn">Cancel</button><button class="add-btn" id="addBtn">Save</button></div></div></body></html>`);
         iframeDoc.close();
 
         const textarea = iframeDoc.getElementById('feedback');
@@ -468,19 +523,26 @@ class AgentationContentScript {
             this.activeModal = null;
         };
 
-        cancelBtn.addEventListener('click', () => {
-            console.log('[UISelector2AI] Cancel clicked');
-            closeModal();
-        });
-
-        addBtn.addEventListener('click', () => {
+        // Centralize save+close to reuse in both the button and keyboard shortcut without duplicating logic
+        const saveAndClose = () => {
             const text = textarea.value.trim();
-            console.log('[UISelector2AI] Add/Save clicked, text:', text);
             if (text) {
                 this.saveAnnotation(element, text, existingIndex, selector);
-                console.log('[UISelector2AI] Annotation saved');
             }
             closeModal();
+        };
+
+        cancelBtn.addEventListener('click', closeModal);
+        addBtn.addEventListener('click', saveAndClose);
+
+        // Enter to save quickly, Escape to cancel; Shift+Enter allows line breaks in the textarea
+        iframeDoc.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                saveAndClose();
+            } else if (e.key === 'Escape') {
+                closeModal();
+            }
         });
 
         if (removeBtn) {
@@ -572,12 +634,23 @@ class AgentationContentScript {
         modal.style.left = left + 'px';
     }
 
+    extractContent(element) {
+        // Capture visible text to give the LLM context about the annotated element's content
+        const text = (element.innerText || element.textContent || '').trim();
+        // Truncate to 500 chars to avoid bloating chrome.storage or the generated prompt
+        return text.length > 500 ? text.slice(0, 500) + '...' : text;
+    }
+
     saveAnnotation(element, feedback, existingIndex, selector) {
         const rect = element.getBoundingClientRect();
+
+        // Store the element's visible content so the generated prompt includes LLM-readable context
+        const content = this.extractContent(element);
 
         if (existingIndex !== -1) {
             // Update
             this.annotations[existingIndex].feedback = feedback;
+            this.annotations[existingIndex].content = content;
             this.annotations[existingIndex].timestamp = Date.now();
         } else {
             // Create
@@ -586,6 +659,7 @@ class AgentationContentScript {
                 id: id,
                 selector: selector,
                 feedback: feedback,
+                content: content,
                 tagName: element.tagName,
                 rect: {
                     width: rect.width,

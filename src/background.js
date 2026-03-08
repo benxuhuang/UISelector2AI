@@ -43,37 +43,32 @@ chrome.runtime.onInstalled.addListener(() => {
   console.log("Agentation Clone installed");
 });
 
+// Shared toggle logic
+function toggleSidePanel(windowId) {
+  const isOpen = openSidePanels.has(windowId);
+  if (isOpen) {
+    chrome.sidePanel.close({ windowId }).catch(err => {
+      console.error('Error closing side panel:', err);
+    });
+  } else {
+    chrome.sidePanel.open({ windowId }).catch(err => {
+      console.error('Error opening side panel:', err);
+    });
+  }
+}
+
+// Handle messages from popup to reuse toggle logic
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.command === 'open_side_panel') {
+    toggleSidePanel(request.windowId);
+  }
+});
+
 chrome.commands.onCommand.addListener((command, tab) => {
   console.log(`Command: ${command}`, tab);
 
   if (command === 'open_side_panel') {
-    // 取得當前視窗 ID
-    const windowId = tab.windowId;
-    
-    // 同步判斷是否已開啟，避免 await 導致 User Gesture 遺失
-    const isOpen = openSidePanels.has(windowId);
-
-    if (isOpen) {
-      // 關閉 side panel (透過先停用再啟用的技巧)
-      chrome.sidePanel.setOptions({
-        tabId: tab.id,
-        enabled: false
-      }).then(() => {
-        // 重新啟用，以便下次可以再次開啟
-        chrome.sidePanel.setOptions({
-          tabId: tab.id,
-          enabled: true,
-          path: 'src/sidepanel/sidepanel.html'
-        });
-      }).catch(err => {
-        console.error('Error closing side panel:', err);
-      });
-    } else {
-      // 開啟 side panel - 必須在事件處理函式的同步區塊中呼叫以保留 User Gesture
-      chrome.sidePanel.open({ windowId: windowId }).catch((error) => {
-        console.error('Error opening side panel:', error);
-      });
-    }
+    toggleSidePanel(tab.windowId);
   } else if (command === 'toggle_inspect' || command === 'clear_annotations') {
     if (tab && tab.id) {
       let action = '';

@@ -1,6 +1,18 @@
 // src/popup/popup.js
 
 document.addEventListener('DOMContentLoaded', async () => {
+    const isMac = /Mac/.test(navigator.platform);
+    const shortcuts = {
+        toggle_inspect: isMac ? '⌃⇧O' : 'Alt+O',
+        open_side_panel: isMac ? '⌃⇧L' : 'Alt+L',
+        copy_prompt: isMac ? '⌥C' : 'Alt+C',
+        clear_annotations: isMac ? '⌃⇧X' : 'Alt+X',
+    };
+    document.querySelectorAll('[data-shortcut]').forEach(el => {
+        const key = el.dataset.shortcut;
+        if (shortcuts[key]) el.textContent = `(${shortcuts[key]})`;
+    });
+
     const toggleBtn = document.getElementById('toggleInspect');
     const inspectText = document.getElementById('inspectText');
     const panelBtn = document.getElementById('openSidePanel');
@@ -91,12 +103,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
             if (!tab) return;
 
-            // Attempt to open side panel programmatically
-            await chrome.sidePanel.open({ windowId: tab.windowId });
+            // Delegate to background.js command handler which already has toggle logic
+            chrome.runtime.sendMessage({ command: 'open_side_panel', tabId: tab.id, windowId: tab.windowId });
             window.close();
         } catch (error) {
-            console.error('Side panel open error:', error);
-            alert('Unable to open Side Panel automatically. Please click the "Side Panel" icon in your browser toolbar.');
+            console.error('Side panel toggle error:', error);
         }
     });
 

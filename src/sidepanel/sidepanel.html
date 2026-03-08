@@ -23,6 +23,40 @@
             position: sticky;
             top: 0;
             z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
+        }
+
+        .header-actions button {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            border: none;
+            background: transparent;
+            border-radius: var(--radius);
+            cursor: pointer;
+            color: var(--text-muted);
+            transition: var(--transition);
+            padding: 0;
+        }
+
+        .header-actions button:hover {
+            background-color: var(--ghost-hover-bg);
+            color: var(--text);
+        }
+
+        .header-actions button.active {
+            color: var(--primary);
+            background-color: var(--ghost-hover-bg);
         }
 
         h2 {
@@ -50,6 +84,61 @@
             gap: var(--space-2);
         }
 
+        /* Card annotation styles */
+        .card .card-header {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding-bottom: var(--space-2);
+            margin-bottom: var(--space-2);
+            border-bottom: 1px solid var(--border);
+            min-width: 0;
+        }
+
+        .card .card-header .code-badge {
+            flex-shrink: 0;
+        }
+
+        .card .card-header .inner-content {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .card .card-header .card-index {
+            flex-shrink: 0;
+        }
+
+        .card .card-feedback {
+            font-size: 0.875rem;
+            color: var(--text);
+            overflow: hidden;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            word-break: break-word;
+        }
+
+        /* Drag & drop */
+        .card[draggable="true"] {
+            cursor: grab;
+        }
+
+        .card[draggable="true"]:active {
+            cursor: grabbing;
+        }
+
+        .card.dragging {
+            opacity: 0.4;
+            transform: scale(0.97);
+        }
+
+        .card.drag-over {
+            border-top: 2px solid var(--primary);
+        }
+
         /* Toast override for sidepanel context */
         #toast {
             width: fit-content;
@@ -61,6 +150,23 @@
 <body>
     <header>
         <h2>Annotations</h2>
+        <div class="header-actions">
+            <button id="toggleInspectBtn" title="Toggle Inspect Mode">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="22" x2="18" y1="12" y2="12" />
+                    <line x1="6" x2="2" y1="12" y2="12" />
+                    <line x1="12" x2="12" y1="6" y2="2" />
+                    <line x1="12" x2="12" y1="22" y2="18" />
+                </svg>
+            </button>
+            <button id="closePanelBtn" title="Close Side Panel">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+            </button>
+        </div>
     </header>
 
     <div id="annotationList">

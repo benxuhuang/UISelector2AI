@@ -18,31 +18,82 @@ function renderAnnotations(annotations) {
     list.innerHTML = '';
 
     if (annotations.length === 0) {
-        list.innerHTML = '<div class="text-center text-muted p-4">No annotations yet.<br><span class="text-xs">Alt+I to start.</span></div>';
+        const isMac = /Mac/.test(navigator.platform);
+        const startShortcut = isMac ? '⌃⇧O' : 'Alt+O';
+        list.innerHTML = `<div class="text-center text-muted p-4">No annotations yet.<br><span class="text-xs">${startShortcut} to start.</span></div>`;
         return;
     }
 
+    let dragFromIndex = null;
+    let didDrag = false; // Flag to distinguish a drag from a simple click on the card
+
     annotations.forEach((ant, index) => {
         const div = document.createElement('div');
-        div.className = 'card mb-3 cursor-pointer';
-        // Add mb-3 util if not present or just style in clean css
-        // ui.css has no mb-3, but has gap-2 in flex container if used. 
-        // I will add inline style or assume style in sidepanel.html handles gap.
-        // Actually ui.css has .card with margin-bottom? No.
-        // I'll rely on the container being flex-col gap-3.
+        div.className = 'card';
+        div.draggable = true;
+        div.dataset.index = index;
+        div.style.cursor = 'pointer';
 
+        const safeContent = (ant.content || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         div.innerHTML = `
             <div class="card-header">
-                <span class="code-badge truncate">${ant.tagName || 'ELEMENT'}</span>
-                <span class="text-xs text-muted">#${index + 1}</span>
+                <span class="code-badge">${ant.tagName || 'ELEMENT'}</span>
+                ${safeContent ? `<span class="text-xs text-muted inner-content" title="${safeContent}">${safeContent}</span>` : ''}
+                <span class="text-xs text-muted card-index">#${index + 1}</span>
             </div>
-            <div class="text-xs font-mono text-muted truncate mb-2 bg-slate-50 p-1 rounded" title="${ant.selector}">${ant.selector}</div>
-            <div class="text-sm text-slate-800">${ant.feedback}</div>
+            <div class="card-feedback">${ant.feedback}</div>
         `;
-        div.addEventListener('click', () => {
-            // Scroll to element (requires message to content script)
-            // Could implement highlighting here later
+
+        // Start drag: visually mark the card and record its origin position
+        div.addEventListener('dragstart', (e) => {
+            didDrag = true;
+            dragFromIndex = index;
+            div.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
         });
+
+        // Clean up styles on drop; reset didDrag on the next tick to avoid blocking the click
+        div.addEventListener('dragend', () => {
+            div.classList.remove('dragging');
+            list.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+            dragFromIndex = null;
+            setTimeout(() => { didDrag = false; }, 0);
+        });
+
+        // Skip opening edit if the user only dragged; didDrag distinguishes drag from intentional click
+        div.addEventListener('click', () => {
+            if (didDrag) return;
+            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                if (tabs.length === 0) return;
+                chrome.tabs.sendMessage(tabs[0].id, { action: 'editAnnotation', index });
+            });
+        });
+
+        // Visually indicate a valid drop zone while dragging over it
+        div.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            list.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+            if (parseInt(div.dataset.index) !== dragFromIndex) {
+                div.classList.add('drag-over');
+            }
+        });
+
+        // Remove the visual indicator when the cursor leaves the card
+        div.addEventListener('dragleave', () => {
+            div.classList.remove('drag-over');
+        });
+
+        // On drop, reorder only if the destination differs from the origin
+        div.addEventListener('drop', (e) => {
+            e.preventDefault();
+            div.classList.remove('drag-over');
+            const toIndex = parseInt(div.dataset.index);
+            if (dragFromIndex !== null && dragFromIndex !== toIndex) {
+                reorderAnnotations(dragFromIndex, toIndex);
+            }
+        });
+
         list.appendChild(div);
     });
 }
@@ -76,6 +127,28 @@ document.getElementById('clearBtn').addEventListener('click', () => {
 });
 
 
+// Reorder using splice to move the element without losing data, and persist so the order survives a reload
+function reorderAnnotations(fromIndex, toIndex) {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs.length === 0) return;
+        const url = tabs[0].url;
+        const tabId = tabs[0].id;
+        const key = 'annotations_' + url;
+
+        chrome.storage.local.get([key], (result) => {
+            const annotations = result[key] || [];
+            if (fromIndex < 0 || fromIndex >= annotations.length) return;
+            const [moved] = annotations.splice(fromIndex, 1);
+            annotations.splice(toIndex, 0, moved);
+
+            chrome.storage.local.set({ [key]: annotations }, () => {
+                renderAnnotations(annotations);
+                chrome.tabs.sendMessage(tabId, { action: 'annotationsUpdated' }).catch(() => {});
+            });
+        });
+    });
+}
+
 function generatePrompt(url, annotations) {
     let output = `# Webpage Context\nURL: ${url}\n\n# Annotations\n`;
     annotations.forEach((ant, index) => {
@@ -83,6 +156,7 @@ function generatePrompt(url, annotations) {
         output += `**Target**: \`${ant.selector}\`\n`;
         output += `**Feedback**: ${ant.feedback}\n`;
         output += `**TagName**: ${ant.tagName}\n`;
+        if (ant.content) output += `**Inner Content**: ${ant.content}\n`;
     });
     return output;
 }
@@ -93,8 +167,40 @@ chrome.runtime.onMessage.addListener((request) => {
     }
 });
 
+// Toggle Inspect Mode button
+const toggleInspectBtn = document.getElementById('toggleInspectBtn');
+// Delegate the toggle to the content script and sync the button's visual state with the response
+toggleInspectBtn.addEventListener('click', () => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs.length === 0) return;
+        chrome.tabs.sendMessage(tabs[0].id, { action: 'toggleInspect' }, (response) => {
+            if (chrome.runtime.lastError) return;
+            toggleInspectBtn.classList.toggle('active', response && response.inspectMode);
+        });
+    });
+});
+
+// Query the actual state from the content script so the button reflects whether inspect is active (prevents desync)
+function updateInspectBtnState() {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs.length === 0) return;
+        chrome.tabs.sendMessage(tabs[0].id, { action: 'getInspectStatus' }, (response) => {
+            if (chrome.runtime.lastError) return;
+            toggleInspectBtn.classList.toggle('active', response && response.inspectMode);
+        });
+    });
+}
+
+// Send message to the background script because only it has permission to close/open the side panel
+document.getElementById('closePanelBtn').addEventListener('click', () => {
+    chrome.windows.getCurrent((win) => {
+        chrome.runtime.sendMessage({ command: 'open_side_panel', windowId: win.id });
+    });
+});
+
 // Initial load
 loadAnnotations();
+updateInspectBtnState();
 
 // Connect to background script to signal that the side panel is open
 // We include the windowId in the name to track which window has the side panel open
