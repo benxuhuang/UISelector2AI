@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const shortcuts = {
         toggle_inspect: isMac ? '⌃⇧O' : 'Alt+O',
         open_side_panel: isMac ? '⌃⇧L' : 'Alt+L',
+        network_capture: isMac ? '⌥N' : 'Alt+N',
         copy_prompt: isMac ? '⌥C' : 'Alt+C',
         clear_annotations: isMac ? '⌃⇧X' : 'Alt+X',
     };
@@ -111,6 +112,43 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
+    // Network Capture button
+    const networkBtn = document.getElementById('networkCapture');
+    const networkText = document.getElementById('networkText');
+    if (networkBtn) {
+        networkBtn.addEventListener('click', async () => {
+            try {
+                const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+                if (!tab) return;
+                chrome.tabs.sendMessage(tab.id, { action: 'toggleNetworkCapture' }, (response) => {
+                    if (chrome.runtime.lastError) {
+                        setStatus('Failed. Refresh page?');
+                        return;
+                    }
+                    const capturing = response && response.capturing;
+                    networkBtn.classList.toggle('active', capturing);
+                    if (networkText) networkText.textContent = capturing ? 'Stop Capture' : 'Network Capture';
+                });
+            } catch (err) {
+                console.error('Error toggling network capture:', err);
+            }
+        });
+
+        // Sync initial state
+        (async () => {
+            try {
+                const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+                if (!tab) return;
+                chrome.tabs.sendMessage(tab.id, { action: 'getNetworkCaptureStatus' }, (response) => {
+                    if (chrome.runtime.lastError) return;
+                    const capturing = response && response.capturing;
+                    networkBtn.classList.toggle('active', capturing);
+                    if (networkText) networkText.textContent = capturing ? 'Stop Capture' : 'Network Capture';
+                });
+            } catch {}
+        })();
+    }
+
     // Copy Prompt button
     const copyBtn = document.getElementById('copyPrompt');
     if (copyBtn) {
@@ -148,7 +186,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
                 if (!tab) return;
 
-                if (confirm('Clear all annotations on this page?')) {
+                if (confirm('Clear all annotations on this page? (Context will be preserved)')) {
                     chrome.tabs.sendMessage(tab.id, { action: 'clearAnnotations' }, (response) => {
                         if (chrome.runtime.lastError) {
                             console.error('Clear failed:', chrome.runtime.lastError);
