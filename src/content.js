@@ -2,6 +2,14 @@
 console.log('%c[UISelector2AI] Content script loaded!', 'color: #4285f4; font-weight: bold; font-size: 14px;');
 console.log('[UISelector2AI] URL:', window.location.href);
 
+function getOrigin(url) {
+    try { return new URL(url).origin; } catch { return url; }
+}
+
+function safeSendRuntime(msg) {
+    chrome.runtime.sendMessage(msg).catch(() => {});
+}
+
 class AgentationContentScript {
     constructor() {
         this.inspectMode = false;
@@ -16,11 +24,38 @@ class AgentationContentScript {
         this.networkPanel = null;
         this.MAX_CAPTURED_REQUESTS = 50;
 
+        this.currentUrl = window.location.href;
+
         this.initOverlay();
         this.initEventListeners();
         this.initNetworkCapture();
+        this.initUrlWatcher();
         this.loadAnnotations();
         this.audioContext = null;
+    }
+
+    initUrlWatcher() {
+        let lastUrl = window.location.href;
+        const check = () => {
+            if (window.location.href !== lastUrl) {
+                lastUrl = window.location.href;
+                this.currentUrl = lastUrl;
+                this.loadAnnotations();
+            }
+        };
+        // Catch pushState/replaceState
+        const wrapHistory = (method) => {
+            const orig = history[method];
+            history[method] = function() {
+                const result = orig.apply(this, arguments);
+                check();
+                return result;
+            };
+        };
+        wrapHistory('pushState');
+        wrapHistory('replaceState');
+        window.addEventListener('popstate', check);
+        window.addEventListener('hashchange', check);
     }
 
     initAudio() {
@@ -115,8 +150,6 @@ class AgentationContentScript {
         // Add Esc key handler to cancel inspect mode
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && this.inspectMode) {
-                // If modal is open, let its own handler (or user) deal with it, 
-                // but if we want Esc to always quit inspect mode:
                 this.inspectMode = false;
                 this.hideOverlay();
                 if (this.activeModal) {
@@ -125,6 +158,7 @@ class AgentationContentScript {
                 }
                 this.hoveredElement = null;
                 this.playSound('off');
+                safeSendRuntime({ action: 'inspectModeChanged', inspectMode: false });
             }
 
             // Handle Alt+C (Option+C on Mac) for copy prompt
@@ -151,7 +185,6 @@ class AgentationContentScript {
 
                 if (!this.inspectMode) {
                     this.hideOverlay();
-                    // Close modal if open
                     if (this.activeModal) {
                         this.activeModal.host.remove();
                         this.activeModal = null;
@@ -161,6 +194,7 @@ class AgentationContentScript {
                 } else {
                     this.playSound('on');
                 }
+                safeSendRuntime({ action: 'inspectModeChanged', inspectMode: this.inspectMode });
                 sendResponse({ status: 'ok', inspectMode: this.inspectMode });
             } else if (request.action === 'getInspectStatus') {
                 sendResponse({ status: 'ok', inspectMode: this.inspectMode });
@@ -179,16 +213,16 @@ class AgentationContentScript {
             } else if (request.action === 'getNetworkCaptureStatus') {
                 sendResponse({ status: 'ok', capturing: this.networkCapture });
             } else if (request.action === 'editAnnotation') {
-                const index = request.index;
-                const ant = this.annotations[index];
+                const ant = this.annotations.find(a => a.id === request.annotationId);
                 if (ant) {
+                    const localIndex = this.annotations.indexOf(ant);
                     if (ant.type === 'network') {
-                        this.openNetworkEditModal(ant, index);
+                        this.openNetworkEditModal(ant, localIndex);
                     } else {
                         const el = document.querySelector(ant.selector);
                         if (el) {
                             el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            setTimeout(() => this.openModal(el, ant, index), 300);
+                            setTimeout(() => this.openModal(el, ant, localIndex), 300);
                         }
                     }
                 }
@@ -257,6 +291,17 @@ class AgentationContentScript {
         }
     }
 
+    summarizeContent(raw, maxLines = 6, maxLen = 300) {
+        if (!raw) return '';
+        const lines = raw.split(/\n+/).map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+        const unique = lines.filter((l, i) => i === 0 || l !== lines[i - 1]);
+        const sliced = unique.slice(0, maxLines);
+        let result = sliced.join(' | ');
+        if (unique.length > maxLines) result += ' ...';
+        if (result.length > maxLen) result = result.slice(0, maxLen) + '...';
+        return result;
+    }
+
     generatePromptText() {
         if (this.annotations.length === 0) {
             return null;
@@ -277,7 +322,7 @@ class AgentationContentScript {
                 output += `**Target**: \`${ant.selector}\`\n`;
                 output += `**Feedback**: ${ant.feedback}\n`;
                 output += `**TagName**: ${ant.tagName}\n`;
-                if (ant.content) output += `**Inner Content**: ${ant.content}\n`;
+                if (ant.content) output += `**Inner Content**: ${this.summarizeContent(ant.content)}\n`;
             }
         });
         return output;
@@ -743,22 +788,77 @@ class AgentationContentScript {
     }
 
     saveAnnotations() {
-        chrome.storage.local.set({ ['annotations_' + window.location.href]: this.annotations }, () => {
-            console.log('Annotations saved');
-            this.renderBadges();
-            chrome.runtime.sendMessage({ action: 'annotationsUpdated' }, (response) => {
-                if (chrome.runtime.lastError) { /* ignore */ }
+        const currentUrl = window.location.href;
+        const mine = this.annotations.filter(a => a.url === currentUrl);
+        // Guard: if annotations exist but none match current URL, data is stale — skip save
+        if (this.annotations.length > 0 && mine.length === 0) return;
+
+        const origin = getOrigin(currentUrl);
+        const key = 'annotations_' + origin;
+        chrome.storage.local.get([key], (result) => {
+            const all = result[key] || [];
+            const mineIds = new Set(mine.map(a => a.id));
+            const storedIds = new Set(all.filter(a => a.url === currentUrl).map(a => a.id));
+
+            // Keep other URLs untouched; update existing in place, remove deleted
+            let merged = all.filter(a => {
+                if (a.url !== currentUrl) return true;
+                return mineIds.has(a.id);
+            }).map(a => {
+                if (a.url !== currentUrl) return a;
+                return mine.find(m => m.id === a.id) || a;
+            });
+
+            // Append only NEW annotations at the end
+            const newAnns = mine.filter(a => !storedIds.has(a.id));
+            merged = [...merged, ...newAnns];
+
+            chrome.storage.local.set({ [key]: merged }, () => {
+                console.log('Annotations saved');
+                this.renderBadges();
+                safeSendRuntime({ action: 'annotationsUpdated' });
             });
         });
     }
 
     loadAnnotations() {
-        chrome.storage.local.get(['annotations_' + window.location.href], (result) => {
-            const data = result['annotations_' + window.location.href];
-            if (data) {
-                this.annotations = data;
-                console.log('Loaded annotations:', this.annotations);
-                this.renderBadges();
+        const origin = getOrigin(window.location.href);
+        const key = 'annotations_' + origin;
+        const currentUrl = window.location.href;
+        // Reset synchronously to prevent stale saves during async load
+        this.annotations = [];
+        // Migration: check for legacy per-URL keys
+        chrome.storage.local.get(null, (all) => {
+            const legacyPrefix = 'annotations_' + origin + '/';
+            const legacyFullUrl = 'annotations_' + currentUrl;
+            const legacyKeys = Object.keys(all).filter(k =>
+                k !== key && (k.startsWith(legacyPrefix) || k === legacyFullUrl)
+            );
+            if (legacyKeys.length > 0) {
+                // Migrate legacy per-URL annotations into origin key
+                let existing = all[key] || [];
+                legacyKeys.forEach(lk => {
+                    const legacyAnns = all[lk] || [];
+                    legacyAnns.forEach(a => {
+                        if (!existing.find(e => e.id === a.id)) {
+                            existing.push(a);
+                        }
+                    });
+                });
+                chrome.storage.local.set({ [key]: existing }, () => {
+                    chrome.storage.local.remove(legacyKeys, () => {
+                        console.log('[UISelector2AI] Migrated legacy keys:', legacyKeys);
+                        this.annotations = existing.filter(a => a.url === currentUrl);
+                        this.renderBadges();
+                    });
+                });
+            } else {
+                const data = all[key];
+                if (data) {
+                    this.annotations = data.filter(a => a.url === currentUrl);
+                    console.log('Loaded annotations:', this.annotations);
+                    this.renderBadges();
+                }
             }
         });
     }
@@ -776,8 +876,9 @@ class AgentationContentScript {
         // Clear annotations array
         this.annotations = [];
 
-        // Clear from storage
-        chrome.storage.local.remove(['annotations_' + window.location.href], () => {
+        // Clear from storage (all annotations for this origin)
+        const origin = getOrigin(window.location.href);
+        chrome.storage.local.remove(['annotations_' + origin], () => {
             console.log('[UISelector2AI] All annotations cleared');
             this.playSound('clear');
             chrome.runtime.sendMessage({ action: 'annotationsUpdated' }, (response) => {

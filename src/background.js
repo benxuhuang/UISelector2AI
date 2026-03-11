@@ -43,17 +43,37 @@ chrome.runtime.onInstalled.addListener(() => {
   console.log("Agentation Clone installed");
 });
 
-// Shared toggle logic
+// Track windows currently transitioning to prevent race conditions
+const transitioningPanels = new Set();
+
+// Shared toggle logic with race-condition protection
 function toggleSidePanel(windowId) {
+  // Prevent rapid double-toggles during transition
+  if (transitioningPanels.has(windowId)) return;
+
   const isOpen = openSidePanels.has(windowId);
+  transitioningPanels.add(windowId);
+
   if (isOpen) {
-    chrome.sidePanel.close({ windowId }).catch(err => {
-      console.error('Error closing side panel:', err);
-    });
+    // Optimistically update state immediately to avoid race condition
+    openSidePanels.delete(windowId);
+    chrome.sidePanel.close({ windowId })
+      .catch(err => {
+        console.error('Error closing side panel:', err);
+        // Rollback on failure
+        openSidePanels.add(windowId);
+      })
+      .finally(() => transitioningPanels.delete(windowId));
   } else {
-    chrome.sidePanel.open({ windowId }).catch(err => {
-      console.error('Error opening side panel:', err);
-    });
+    // Optimistically update state immediately to avoid race condition
+    openSidePanels.add(windowId);
+    chrome.sidePanel.open({ windowId })
+      .catch(err => {
+        console.error('Error opening side panel:', err);
+        // Rollback on failure
+        openSidePanels.delete(windowId);
+      })
+      .finally(() => transitioningPanels.delete(windowId));
   }
 }
 

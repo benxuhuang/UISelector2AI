@@ -1,14 +1,46 @@
 // src/sidepanel/sidepanel.js
 
+function getOrigin(url) {
+    try { return new URL(url).origin; } catch { return url; }
+}
+
+function safeSendTab(tabId, msg) {
+    chrome.tabs.sendMessage(tabId, msg).catch(() => {});
+}
+
 function loadAnnotations() {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         if (tabs.length === 0) return;
-        const tabId = tabs[0].id; // Not used for storage key directly in this simplified version, using URL
         const url = tabs[0].url;
+        const origin = getOrigin(url);
+        const key = 'annotations_' + origin;
 
-        chrome.storage.local.get(['annotations_' + url], (result) => {
-            const annotations = result['annotations_' + url] || [];
-            renderAnnotations(annotations);
+        // Migration: check for legacy per-URL keys
+        chrome.storage.local.get(null, (all) => {
+            const legacyPrefix = 'annotations_' + origin + '/';
+            const legacyKeys = Object.keys(all).filter(k =>
+                k !== key && k.startsWith(legacyPrefix)
+            );
+            if (legacyKeys.length > 0) {
+                let existing = all[key] || [];
+                legacyKeys.forEach(lk => {
+                    const legacyAnns = all[lk] || [];
+                    legacyAnns.forEach(a => {
+                        if (!existing.find(e => e.id === a.id)) {
+                            existing.push(a);
+                        }
+                    });
+                });
+                chrome.storage.local.set({ [key]: existing }, () => {
+                    chrome.storage.local.remove(legacyKeys, () => {
+                        console.log('[UISelector2AI] Sidepanel migrated legacy keys:', legacyKeys);
+                        renderAnnotations(existing);
+                    });
+                });
+            } else {
+                const annotations = all[key] || [];
+                renderAnnotations(annotations);
+            }
         });
     });
 }
@@ -25,9 +57,23 @@ function renderAnnotations(annotations) {
     }
 
     let dragFromIndex = null;
-    let didDrag = false; // Flag to distinguish a drag from a simple click on the card
+    let didDrag = false;
+    let lastUrl = null;
 
     annotations.forEach((ant, index) => {
+        // URL group header
+        if (ant.url !== lastUrl) {
+            const header = document.createElement('div');
+            header.className = 'url-group-header';
+            try {
+                const parsed = new URL(ant.url);
+                header.textContent = parsed.pathname + parsed.search;
+            } catch { header.textContent = ant.url; }
+            header.title = ant.url;
+            list.appendChild(header);
+            lastUrl = ant.url;
+        }
+
         const div = document.createElement('div');
         div.draggable = true;
         div.dataset.index = index;
@@ -66,7 +112,6 @@ function renderAnnotations(annotations) {
             `;
         }
 
-        // Start drag: visually mark the card and record its origin position
         div.addEventListener('dragstart', (e) => {
             didDrag = true;
             dragFromIndex = index;
@@ -74,7 +119,6 @@ function renderAnnotations(annotations) {
             e.dataTransfer.effectAllowed = 'move';
         });
 
-        // Clean up styles on drop; reset didDrag on the next tick to avoid blocking the click
         div.addEventListener('dragend', () => {
             div.classList.remove('dragging');
             list.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
@@ -82,16 +126,18 @@ function renderAnnotations(annotations) {
             setTimeout(() => { didDrag = false; }, 0);
         });
 
-        // Skip opening edit if the user only dragged; didDrag distinguishes drag from intentional click
         div.addEventListener('click', () => {
             if (didDrag) return;
             chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
                 if (tabs.length === 0) return;
-                chrome.tabs.sendMessage(tabs[0].id, { action: 'editAnnotation', index });
+                safeSendTab(tabs[0].id, {
+                    action: 'editAnnotation',
+                    annotationId: annotations[index].id,
+                    annotationUrl: annotations[index].url
+                });
             });
         });
 
-        // Visually indicate a valid drop zone while dragging over it
         div.addEventListener('dragover', (e) => {
             e.preventDefault();
             e.dataTransfer.dropEffect = 'move';
@@ -101,12 +147,10 @@ function renderAnnotations(annotations) {
             }
         });
 
-        // Remove the visual indicator when the cursor leaves the card
         div.addEventListener('dragleave', () => {
             div.classList.remove('drag-over');
         });
 
-        // On drop, reorder only if the destination differs from the origin
         div.addEventListener('drop', (e) => {
             e.preventDefault();
             div.classList.remove('drag-over');
@@ -123,11 +167,14 @@ function renderAnnotations(annotations) {
 document.getElementById('exportBtn').addEventListener('click', () => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         const url = tabs[0].url;
-        const contextKey = 'context_' + url;
-        chrome.storage.local.get(['annotations_' + url, contextKey], (result) => {
-            const annotations = result['annotations_' + url] || [];
-            const context = result[contextKey] || '';
-            const prompt = generatePrompt(url, annotations, context);
+        const origin = getOrigin(url);
+        const annKey = 'annotations_' + origin;
+        const ctxKey = 'context_' + origin;
+
+        chrome.storage.local.get([annKey, ctxKey], (result) => {
+            const annotations = result[annKey] || [];
+            const context = result[ctxKey] || '';
+            const prompt = generatePrompt(annotations, context);
             navigator.clipboard.writeText(prompt).then(() => {
                 const toast = document.getElementById('toast');
                 toast.classList.add('show');
@@ -141,23 +188,23 @@ document.getElementById('clearBtn').addEventListener('click', () => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         if (tabs.length === 0) return;
         const url = tabs[0].url;
+        const origin = getOrigin(url);
         const tabId = tabs[0].id;
-        // Only clear annotations, preserve context
-        chrome.storage.local.remove(['annotations_' + url], () => {
+        chrome.storage.local.remove(['annotations_' + origin], () => {
             loadAnnotations();
-            chrome.tabs.sendMessage(tabId, { action: 'clearAnnotations' });
+            safeSendTab(tabId, { action: 'clearAnnotations' });
         });
     });
 });
 
 
-// Reorder using splice to move the element without losing data, and persist so the order survives a reload
 function reorderAnnotations(fromIndex, toIndex) {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         if (tabs.length === 0) return;
         const url = tabs[0].url;
+        const origin = getOrigin(url);
         const tabId = tabs[0].id;
-        const key = 'annotations_' + url;
+        const key = 'annotations_' + origin;
 
         chrome.storage.local.get([key], (result) => {
             const annotations = result[key] || [];
@@ -167,20 +214,41 @@ function reorderAnnotations(fromIndex, toIndex) {
 
             chrome.storage.local.set({ [key]: annotations }, () => {
                 renderAnnotations(annotations);
-                chrome.tabs.sendMessage(tabId, { action: 'annotationsUpdated' }).catch(() => {});
+                safeSendTab(tabId, { action: 'annotationsUpdated' });
             });
         });
     });
 }
 
-function generatePrompt(url, annotations, context) {
-    let output = `# Webpage Context\nURL: ${url}\n`;
+function summarizeContent(raw, maxLines = 6, maxLen = 300) {
+    if (!raw) return '';
+    // Collapse runs of whitespace into single lines, trim each
+    const lines = raw.split(/\n+/).map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    // Deduplicate consecutive identical lines
+    const unique = lines.filter((l, i) => i === 0 || l !== lines[i - 1]);
+    const sliced = unique.slice(0, maxLines);
+    let result = sliced.join(' | ');
+    if (unique.length > maxLines) result += ' ...';
+    if (result.length > maxLen) result = result.slice(0, maxLen) + '...';
+    return result;
+}
+
+function generatePrompt(annotations, context) {
+    if (annotations.length === 0) return '';
+
+    let output = `# Webpage Annotations\n`;
     if (context) {
-        output += `\n## Initial Context\n${context}\n`;
+        output += `\n## Context\n${context}\n`;
     }
-    output += `\n# Annotations\n`;
+
+    // Iterate in storage order, insert page header when URL changes
+    let lastUrl = null;
     annotations.forEach((ant, index) => {
-        output += `\n## Annotation ${index + 1}`;
+        if (ant.url !== lastUrl) {
+            output += `\n---\n## Page: ${ant.url}\n`;
+            lastUrl = ant.url;
+        }
+        output += `\n### Annotation ${index + 1}`;
         if (ant.type === 'network') {
             output += ` (Network Request)\n`;
             output += `**Request**: \`${ant.method} ${ant.requestUrl}\` → ${ant.status} ${ant.statusText || ''} (${ant.duration}ms)\n`;
@@ -193,9 +261,10 @@ function generatePrompt(url, annotations, context) {
             output += `**Target**: \`${ant.selector}\`\n`;
             output += `**Feedback**: ${ant.feedback}\n`;
             output += `**TagName**: ${ant.tagName}\n`;
-            if (ant.content) output += `**Inner Content**: ${ant.content}\n`;
+            if (ant.content) output += `**Inner Content**: ${summarizeContent(ant.content)}\n`;
         }
     });
+
     return output;
 }
 
@@ -203,26 +272,23 @@ chrome.runtime.onMessage.addListener((request) => {
     if (request.action === 'annotationsUpdated') {
         loadAnnotations();
     }
+    if (request.action === 'inspectModeChanged') {
+        toggleInspectBtn.classList.toggle('active', request.inspectMode);
+    }
     if (request.action === 'networkCaptureChanged') {
-        const btn = document.getElementById('networkCaptureBtn');
-        btn.classList.toggle('active', request.capturing);
+        networkCaptureBtn.classList.toggle('active', request.capturing);
     }
 });
 
-// Toggle Inspect Mode button
+// Toggle Inspect Mode button — state synced via inspectModeChanged broadcast
 const toggleInspectBtn = document.getElementById('toggleInspectBtn');
-// Delegate the toggle to the content script and sync the button's visual state with the response
 toggleInspectBtn.addEventListener('click', () => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         if (tabs.length === 0) return;
-        chrome.tabs.sendMessage(tabs[0].id, { action: 'toggleInspect' }, (response) => {
-            if (chrome.runtime.lastError) return;
-            toggleInspectBtn.classList.toggle('active', response && response.inspectMode);
-        });
+        chrome.tabs.sendMessage(tabs[0].id, { action: 'toggleInspect' }).catch(() => {});
     });
 });
 
-// Query the actual state from the content script so the button reflects whether inspect is active (prevents desync)
 function updateInspectBtnState() {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         if (tabs.length === 0) return;
@@ -259,7 +325,7 @@ function showContextDisplay(value) {
     contextArea.classList.remove('open');
     contextText.textContent = value;
     contextDisplay.classList.add('visible');
-    contextBtn.classList.add('active');
+    contextBtn.classList.remove('active');
 }
 
 function hideContext() {
@@ -268,10 +334,8 @@ function hideContext() {
     contextBtn.classList.remove('active');
 }
 
-// Pencil button: if context is saved → open edit with current value; if empty → open edit blank
 contextBtn.addEventListener('click', () => {
     if (contextArea.classList.contains('open')) {
-        // Already editing, close without saving
         if (contextInput.value.trim()) {
             saveContext(contextInput.value.trim());
         } else {
@@ -282,7 +346,6 @@ contextBtn.addEventListener('click', () => {
     }
 });
 
-// "Set" button: save and switch to display mode
 contextSaveBtn.addEventListener('click', () => {
     const value = contextInput.value.trim();
     if (value) {
@@ -292,12 +355,22 @@ contextSaveBtn.addEventListener('click', () => {
     }
 });
 
-// Click on the displayed paragraph → go back to edit mode
+contextInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        const value = contextInput.value.trim();
+        if (value) {
+            saveContext(value);
+        } else {
+            clearContext();
+        }
+    }
+});
+
 contextText.addEventListener('click', () => {
     showContextEdit();
 });
 
-// X button on context display → remove context
 document.getElementById('contextRemoveBtn').addEventListener('click', (e) => {
     e.stopPropagation();
     clearContext();
@@ -306,7 +379,7 @@ document.getElementById('contextRemoveBtn').addEventListener('click', (e) => {
 function saveContext(value) {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         if (tabs.length === 0) return;
-        const key = 'context_' + tabs[0].url;
+        const key = 'context_' + getOrigin(tabs[0].url);
         chrome.storage.local.set({ [key]: value }, () => {
             showContextDisplay(value);
         });
@@ -316,7 +389,7 @@ function saveContext(value) {
 function clearContext() {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         if (tabs.length === 0) return;
-        const key = 'context_' + tabs[0].url;
+        const key = 'context_' + getOrigin(tabs[0].url);
         chrome.storage.local.remove([key], () => {
             contextInput.value = '';
             hideContext();
@@ -327,7 +400,7 @@ function clearContext() {
 function loadContext() {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         if (tabs.length === 0) return;
-        const key = 'context_' + tabs[0].url;
+        const key = 'context_' + getOrigin(tabs[0].url);
         chrome.storage.local.get([key], (result) => {
             const value = result[key] || '';
             contextInput.value = value;
@@ -340,15 +413,12 @@ function loadContext() {
     });
 }
 
-// Network Capture toggle
+// Network Capture toggle — state synced via networkCaptureChanged broadcast
 const networkCaptureBtn = document.getElementById('networkCaptureBtn');
 networkCaptureBtn.addEventListener('click', () => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         if (tabs.length === 0) return;
-        chrome.tabs.sendMessage(tabs[0].id, { action: 'toggleNetworkCapture' }, (response) => {
-            if (chrome.runtime.lastError) return;
-            networkCaptureBtn.classList.toggle('active', response && response.capturing);
-        });
+        chrome.tabs.sendMessage(tabs[0].id, { action: 'toggleNetworkCapture' }).catch(() => {});
     });
 });
 
@@ -369,7 +439,6 @@ updateInspectBtnState();
 updateNetworkCaptureBtnState();
 
 // Connect to background script to signal that the side panel is open
-// We include the windowId in the name to track which window has the side panel open
 chrome.windows.getCurrent((window) => {
     chrome.runtime.connect({ name: `sidepanel-${window.id}` });
 });

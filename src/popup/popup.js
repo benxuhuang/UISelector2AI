@@ -86,7 +86,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             chrome.tabs.sendMessage(tab.id, { action: 'toggleInspect' }, (response) => {
                 if (chrome.runtime.lastError) {
-                    console.error('Toggle failed:', chrome.runtime.lastError);
+                    console.error('Toggle failed:', chrome.runtime.lastError.message);
                     setStatus('Failed to toggle. Refresh page?');
                 } else {
                     console.log('Toggle response:', response);
