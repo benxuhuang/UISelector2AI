@@ -456,6 +456,7 @@ let contextMicState = 'idle'; // idle | recording | processing
 
 async function handleContextMicClick() {
     if (contextMicState === 'idle') {
+        new Audio(chrome.runtime.getURL('assets/record.wav')).play().catch(() => {});
         contextMicState = 'recording';
         contextMicBtn.classList.add('recording');
         const r = await VoiceClient.start();
