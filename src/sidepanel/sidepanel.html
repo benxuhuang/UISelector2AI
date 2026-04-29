@@ -373,6 +373,21 @@
             gap: 8px;
             align-items: center;
         }
+        .mic-timer {
+            display: inline-block;
+            overflow: hidden;
+            white-space: nowrap;
+            max-width: 0;
+            opacity: 0;
+            transition: max-width 0.3s ease, opacity 0.3s ease;
+            font-size: 10px;
+            font-weight: 600;
+            text-align: center;
+        }
+        .mic-timer.show {
+            max-width: 35px;
+            opacity: 1;
+        }
     </style>
 </head>
 
@@ -386,12 +401,6 @@
                     <circle cx="12" cy="12" r="3"/>
                 </svg>
             </button>
-            <button id="contextBtn" title="Initial Context">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-                    <path d="m15 5 4 4" />
-                </svg>
-            </button>
             <button id="toggleInspectBtn" title="Toggle Inspect Mode">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="12" cy="12" r="10" />
@@ -399,6 +408,12 @@
                     <line x1="6" x2="2" y1="12" y2="12" />
                     <line x1="12" x2="12" y1="6" y2="2" />
                     <line x1="12" x2="12" y1="22" y2="18" />
+                </svg>
+            </button>
+            <button id="contextBtn" title="Initial Context">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                    <path d="m15 5 4 4" />
                 </svg>
             </button>
             <button id="openSettingsBtn" title="Voice Settings">
@@ -436,6 +451,7 @@
                     <line x1="12" y1="19" x2="12" y2="23"/>
                     <line x1="8" y1="23" x2="16" y2="23"/>
                 </svg>
+                <span id="contextMicTimer" class="mic-timer"></span>
             </button>
             <button id="contextSaveBtn">Set</button>
         </div>

@@ -452,17 +452,59 @@ if (openSettingsBtn) {
 
 // Voice mic button for context input
 const contextMicBtn = document.getElementById('contextMicBtn');
-let contextMicState = 'idle'; // idle | recording | processing
+const contextMicTimer = document.getElementById('contextMicTimer');
+let contextMicState = 'idle'; // idle | recording | ready | processing
+let contextMicTimerInterval = null;
+
+const MAX_REC_TIME = 120;
+
+function formatTime(secs) {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function showContextTimer(show) {
+    contextMicTimer.classList.toggle('show', show);
+}
+
+function startContextMicTimer() {
+    let remaining = MAX_REC_TIME;
+    contextMicTimer.textContent = formatTime(remaining);
+    contextMicTimerInterval = setInterval(() => {
+        remaining--;
+        contextMicTimer.textContent = formatTime(remaining);
+        if (remaining <= 0) {
+            clearInterval(contextMicTimerInterval);
+            contextMicTimerInterval = null;
+            showContextTimer(false);
+            contextMicBtn.click();
+        }
+    }, 1000);
+}
+
+function stopContextMicTimer() {
+    if (contextMicTimerInterval) {
+        clearInterval(contextMicTimerInterval);
+        contextMicTimerInterval = null;
+    }
+    showContextTimer(false);
+    setTimeout(() => { contextMicTimer.textContent = ''; }, 300);
+}
 
 async function handleContextMicClick() {
     if (contextMicState === 'idle') {
-        new Audio(chrome.runtime.getURL('assets/record.wav')).play().catch(() => {});
+        const a = new Audio(chrome.runtime.getURL('assets/record.wav'));
+        a.volume = 0.3;
+        a.play().catch(() => {});
         contextMicState = 'recording';
         contextMicBtn.classList.add('recording');
+        startContextMicTimer();
         const r = await VoiceClient.start();
         if (!r || !r.ok) {
             contextMicState = 'idle';
             contextMicBtn.classList.remove('recording');
+            stopContextMicTimer();
             alert('Could not start recording: ' + ((r && r.error) || 'unknown'));
         } else {
             setTimeout(() => {
@@ -470,10 +512,12 @@ async function handleContextMicClick() {
                     contextMicBtn.classList.remove('recording');
                     contextMicBtn.classList.add('ready');
                     contextMicState = 'ready';
+                    showContextTimer(true);
                 }
             }, 400);
         }
     } else if (contextMicState === 'recording' || contextMicState === 'ready') {
+        stopContextMicTimer();
         contextMicState = 'processing';
         contextMicBtn.classList.remove('recording', 'ready');
         contextMicBtn.classList.add('processing');

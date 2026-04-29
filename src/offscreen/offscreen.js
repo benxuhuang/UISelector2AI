@@ -32,12 +32,11 @@ async function startRecording() {
   if (mediaRecorder && mediaRecorder.state === 'recording') {
     throw new Error('Already recording');
   }
-  // Higher quality capture: noise suppression + echo cancel + 48 kHz mono.
-  // Most browsers ignore sampleRate but Chrome respects it on macOS/Windows.
+  // 16 kHz mono — optimal for speech recognition APIs.
   stream = await navigator.mediaDevices.getUserMedia({
     audio: {
       channelCount: 1,
-      sampleRate: 48000,
+      sampleRate: 16000,
       echoCancellation: true,
       noiseSuppression: true,
       autoGainControl: true

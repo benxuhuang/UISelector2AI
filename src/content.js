@@ -589,16 +589,60 @@ class AgentationContentScript {
         const micBtn = iframeDoc.getElementById('micBtn');
         if (micBtn) {
             let micState = 'idle';
+            let micTimerInterval = null;
+            const timerSpan = iframeDoc.createElement('span');
+            timerSpan.style.cssText = 'display:inline-block;overflow:hidden;white-space:nowrap;max-width:0;opacity:0;transition:max-width 0.3s ease,opacity 0.3s ease;font-size:10px;font-weight:600;text-align:center;';
+            micBtn.appendChild(timerSpan);
+
+            const MAX_REC_TIME = 120;
+
+            function showTimer(show) {
+                timerSpan.style.maxWidth = show ? '35px' : '0';
+                timerSpan.style.opacity = show ? '1' : '0';
+            }
+
+            function formatTime(secs) {
+                const m = Math.floor(secs / 60);
+                const s = secs % 60;
+                return `${m}:${s.toString().padStart(2, '0')}`;
+            }
+
+            function startMicTimer() {
+                let remaining = MAX_REC_TIME;
+                timerSpan.textContent = formatTime(remaining);
+                micTimerInterval = setInterval(() => {
+                    remaining--;
+                    timerSpan.textContent = formatTime(remaining);
+                    if (remaining <= 0) {
+                        clearInterval(micTimerInterval);
+                        micTimerInterval = null;
+                        showTimer(false);
+                        micBtn.click();
+                    }
+                }, 1000);
+            }
+
+            function stopMicTimer() {
+                if (micTimerInterval) {
+                    clearInterval(micTimerInterval);
+                    micTimerInterval = null;
+                }
+                showTimer(false);
+                setTimeout(() => { timerSpan.textContent = ''; }, 300);
+            }
+
             micBtn.addEventListener('click', async () => {
                 if (micState === 'idle') {
                     this.playSound('record');
                     micState = 'recording';
                     micBtn.classList.add('recording');
+                    startMicTimer();
                     try {
                         const r = await chrome.runtime.sendMessage({ action: 'voice:start' });
                         if (!r || !r.ok) {
                             micState = 'idle';
                             micBtn.classList.remove('recording');
+                            stopMicTimer();
                             alert('Could not record: ' + ((r && r.error) || 'unknown'));
                         } else {
                             setTimeout(() => {
@@ -606,15 +650,18 @@ class AgentationContentScript {
                                     micBtn.classList.remove('recording');
                                     micBtn.classList.add('ready');
                                     micState = 'ready';
+                                    showTimer(true);
                                 }
                             }, 400);
                         }
                     } catch (e) {
                         micState = 'idle';
                         micBtn.classList.remove('recording');
+                        stopMicTimer();
                         alert('Error: ' + e.message);
                     }
                 } else if (micState === 'recording' || micState === 'ready') {
+                    stopMicTimer();
                     micState = 'processing';
                     micBtn.classList.remove('recording', 'ready');
                     micBtn.classList.add('processing');
@@ -623,7 +670,8 @@ class AgentationContentScript {
                         micState = 'idle';
                         micBtn.classList.remove('processing');
                         if (r && r.ok && r.text) {
-                            textarea.value = r.text;
+                            const cur = textarea.value.trim();
+                            textarea.value = cur ? cur + ' ' + r.text : r.text;
                         } else {
                             alert('Error: ' + ((r && r.error) || 'no transcription'));
                         }
@@ -1013,6 +1061,31 @@ class AgentationContentScript {
             DELETE: '#ef4444', OPTIONS: '#8b5cf6', HEAD: '#6b7280',
         };
 
+        function extractResource(url) {
+            try {
+                const path = new URL(url).pathname.replace(/\/$/, '');
+                const segments = path.split('/').filter(Boolean);
+                for (let i = segments.length - 1; i >= 0; i--) {
+                    const s = decodeURIComponent(segments[i]);
+                    if (!/^\d+$/.test(s) && !/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(s)) {
+                        return s;
+                    }
+                }
+                return null;
+            } catch { return null; }
+        }
+
+        // Unique resource names from the last 10 requests
+        const filterResources = [];
+        const seen = new Set();
+        for (let i = 0; i < Math.min(10, this.capturedRequests.length); i++) {
+            const res = extractResource(this.capturedRequests[i].url);
+            if (res && !seen.has(res)) { seen.add(res); filterResources.push(res); }
+        }
+        const filterHtml = filterResources.length > 0
+            ? filterResources.map(r => `<span class="filter-badge" data-resource="${r}">${r}</span>`).join('')
+            : '';
+
         const rows = this.capturedRequests.map((req, i) => {
             const mColor = methodColors[req.method] || '#6b7280';
             const statusColor = req.status >= 200 && req.status < 300 ? '#22c55e'
@@ -1051,6 +1124,10 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:${c.bg};color:${c.te
 .search-bar input::placeholder{color:${c.muted};}
 .search-wrap{position:relative;}
 .search-icon{position:absolute;left:8px;top:50%;transform:translateY(-50%);color:${c.muted};pointer-events:none;}
+.filter-bar{display:flex;flex-wrap:wrap;gap:4px;padding:4px 14px 6px;border-bottom:1px solid ${c.border};}
+.filter-badge{padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:${c.surface};color:${c.muted};cursor:pointer;border:1px solid ${c.border};transition:all 0.1s;}
+.filter-badge:hover{background:${c.focus};color:white;border-color:${c.focus};}
+.filter-badge.active{background:${c.focus};color:white;border-color:${c.focus};}
 .list{overflow-y:auto;max-height:252px;padding:4px 0;}
 .list::-webkit-scrollbar{width:6px;}
 .list::-webkit-scrollbar-track{background:transparent;}
@@ -1088,6 +1165,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:${c.bg};color:${c.te
         <input type="text" id="searchInput" placeholder="Filter by URL… e.g. /products" spellcheck="false" />
     </div>
 </div>
+${filterHtml ? `<div class="filter-bar">${filterHtml}</div>` : ''}
 <div class="list" id="list">${rows || emptyMsg}</div>
 <div class="no-results" id="noResults">No matching requests</div>
 </body></html>`);
@@ -1120,9 +1198,28 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:${c.bg};color:${c.te
             countBadge.textContent = term ? `${visible}/${this.capturedRequests.length}` : this.capturedRequests.length;
         };
 
-        searchInput.addEventListener('input', applyFilter);
+        searchInput.addEventListener('input', () => {
+            doc.querySelectorAll('.filter-badge').forEach(b => b.classList.remove('active'));
+            applyFilter();
+        });
         // Apply filter immediately in case term was preserved
         if (this._networkSearchTerm) applyFilter();
+
+        // ── Quick filter badges ──
+        doc.querySelectorAll('.filter-badge').forEach(badge => {
+            badge.addEventListener('click', () => {
+                const resource = badge.dataset.resource;
+                const isActive = badge.classList.contains('active');
+                doc.querySelectorAll('.filter-badge').forEach(b => b.classList.remove('active'));
+                if (!isActive) {
+                    badge.classList.add('active');
+                    searchInput.value = resource;
+                } else {
+                    searchInput.value = '';
+                }
+                applyFilter();
+            });
+        });
 
         // ── Event handlers ──
         doc.getElementById('closeBtn').addEventListener('click', () => {
