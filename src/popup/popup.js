@@ -103,12 +103,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
             if (!tab) return;
-
-            // Delegate to background.js command handler which already has toggle logic
-            chrome.runtime.sendMessage({ command: 'open_side_panel', tabId: tab.id, windowId: tab.windowId });
+            // Direct call preserves user gesture context (required by chrome.sidePanel.open() on first use)
+            await chrome.sidePanel.open({ windowId: tab.windowId });
             window.close();
         } catch (error) {
-            console.error('Side panel toggle error:', error);
+            console.error('Side panel open error:', error);
         }
     });
 

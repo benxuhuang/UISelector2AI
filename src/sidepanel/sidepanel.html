@@ -230,19 +230,23 @@
             margin-top: var(--space-2);
         }
 
-        .context-area .context-edit-actions button {
+        .context-area .context-edit-actions button:not(.mic-btn) {
             font-size: 0.75rem;
-            padding: 3px 12px;
+            padding: 0 12px;
+            height: 28px;
             border: none;
             border-radius: var(--radius);
             cursor: pointer;
-            background-color: var(--primary);
+            background: var(--primary);
             color: white;
             font-weight: 500;
             transition: opacity 0.15s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
         }
 
-        .context-area .context-edit-actions button:hover {
+        .context-area .context-edit-actions button:not(.mic-btn):hover {
             opacity: 0.85;
         }
 
@@ -321,6 +325,54 @@
             width: fit-content;
             white-space: nowrap;
         }
+
+        /* Voice mic button */
+        .mic-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 5px 10px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text-muted);
+            border-radius: var(--radius);
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .mic-btn:hover {
+            color: var(--primary);
+            border-color: var(--primary);
+        }
+        .mic-btn.recording {
+            background: #ef4444;
+            color: white;
+            border-color: #ef4444;
+            animation: micPulse 1.4s infinite;
+        }
+        .mic-btn.ready {
+            background: #22c55e;
+            color: white;
+            border-color: #22c55e;
+            animation: readyPulse 1.4s infinite;
+        }
+        .mic-btn.processing {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+        @keyframes micPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.5); }
+            50% { box-shadow: 0 0 0 6px rgba(239,68,68,0); }
+        }
+        @keyframes readyPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0.5); }
+            50% { box-shadow: 0 0 0 6px rgba(34,197,94,0); }
+        }
+        .context-area .context-edit-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
     </style>
 </head>
 
@@ -349,6 +401,12 @@
                     <line x1="12" x2="12" y1="22" y2="18" />
                 </svg>
             </button>
+            <button id="openSettingsBtn" title="Voice Settings">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                </svg>
+            </button>
             <button id="closePanelBtn" title="Close Side Panel">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="18" y1="6" x2="6" y2="18" />
@@ -369,8 +427,16 @@
     </div>
 
     <div id="contextArea" class="context-area">
-        <textarea id="contextInput" placeholder="Describe the general context for your annotations..." spellcheck="false"></textarea>
+        <textarea id="contextInput" placeholder="Describe the general context or dictate with the microphone..." spellcheck="false"></textarea>
         <div class="context-edit-actions">
+            <button id="contextMicBtn" class="mic-btn" title="Dictate with voice">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                    <line x1="12" y1="19" x2="12" y2="23"/>
+                    <line x1="8" y1="23" x2="16" y2="23"/>
+                </svg>
+            </button>
             <button id="contextSaveBtn">Set</button>
         </div>
     </div>
@@ -400,6 +466,7 @@
     </footer>
 
     <div id="toast" class="toast">Copy successful</div>
+    <script src="../voice/voice-client.js"></script>
     <script src="sidepanel.js"></script>
 </body>
 

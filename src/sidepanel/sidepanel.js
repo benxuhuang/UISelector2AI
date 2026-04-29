@@ -179,6 +179,7 @@ document.getElementById('exportBtn').addEventListener('click', () => {
                 const toast = document.getElementById('toast');
                 toast.classList.add('show');
                 setTimeout(() => { toast.classList.remove('show'); }, 3000);
+                new Audio(chrome.runtime.getURL('assets/copy.wav')).play().catch(() => {});
             });
         });
     });
@@ -255,13 +256,13 @@ function generatePrompt(annotations, context) {
             if (ant.payload) output += `**Payload**: \`\`\`\n${ant.payload}\n\`\`\`\n`;
             if (ant.response) output += `**Response**: \`\`\`\n${ant.response}\n\`\`\`\n`;
             if (ant.initiator) output += `**Initiator**: ${ant.initiator}\n`;
-            output += `**Feedback**: ${ant.feedback}\n`;
+            output += `**Instruction**: ${ant.feedback}\n`;
         } else {
             output += `\n`;
             output += `**Target**: \`${ant.selector}\`\n`;
-            output += `**Feedback**: ${ant.feedback}\n`;
             output += `**TagName**: ${ant.tagName}\n`;
-            if (ant.content) output += `**Inner Content**: ${summarizeContent(ant.content)}\n`;
+            if (ant.content) output += `**Inner Content**: ${summarizeContent(ant.content, 1, 100)}\n`;
+            output += `**Instruction**: ${ant.feedback}\n`;
         }
     });
 
@@ -299,10 +300,9 @@ function updateInspectBtnState() {
     });
 }
 
-// Send message to the background script because only it has permission to close/open the side panel
 document.getElementById('closePanelBtn').addEventListener('click', () => {
     chrome.windows.getCurrent((win) => {
-        chrome.runtime.sendMessage({ command: 'open_side_panel', windowId: win.id });
+        chrome.sidePanel.close({ windowId: win.id });
     });
 });
 
@@ -437,6 +437,61 @@ loadAnnotations();
 loadContext();
 updateInspectBtnState();
 updateNetworkCaptureBtnState();
+
+// Settings button → open options page
+const openSettingsBtn = document.getElementById('openSettingsBtn');
+if (openSettingsBtn) {
+    openSettingsBtn.addEventListener('click', () => {
+        if (chrome.runtime.openOptionsPage) {
+            chrome.runtime.openOptionsPage();
+        } else {
+            window.open(chrome.runtime.getURL('src/settings/settings.html'));
+        }
+    });
+}
+
+// Voice mic button for context input
+const contextMicBtn = document.getElementById('contextMicBtn');
+let contextMicState = 'idle'; // idle | recording | processing
+
+async function handleContextMicClick() {
+    if (contextMicState === 'idle') {
+        contextMicState = 'recording';
+        contextMicBtn.classList.add('recording');
+        const r = await VoiceClient.start();
+        if (!r || !r.ok) {
+            contextMicState = 'idle';
+            contextMicBtn.classList.remove('recording');
+            alert('Could not start recording: ' + ((r && r.error) || 'unknown'));
+        } else {
+            setTimeout(() => {
+                if (contextMicState === 'recording') {
+                    contextMicBtn.classList.remove('recording');
+                    contextMicBtn.classList.add('ready');
+                    contextMicState = 'ready';
+                }
+            }, 400);
+        }
+    } else if (contextMicState === 'recording' || contextMicState === 'ready') {
+        contextMicState = 'processing';
+        contextMicBtn.classList.remove('recording', 'ready');
+        contextMicBtn.classList.add('processing');
+        const r = await VoiceClient.stopAndTranscribe();
+        contextMicState = 'idle';
+        contextMicBtn.classList.remove('processing');
+        if (r && r.ok && r.text) {
+            const cur = contextInput.value.trim();
+            contextInput.value = cur ? cur + ' ' + r.text : r.text;
+            contextInput.focus();
+        } else {
+            alert('Error: ' + ((r && r.error) || 'no text'));
+        }
+    }
+}
+
+if (contextMicBtn) {
+    contextMicBtn.addEventListener('click', handleContextMicClick);
+}
 
 // Connect to background script to signal that the side panel is open
 chrome.windows.getCurrent((window) => {

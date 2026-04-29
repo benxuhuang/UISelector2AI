@@ -31,7 +31,26 @@ class AgentationContentScript {
         this.initNetworkCapture();
         this.initUrlWatcher();
         this.loadAnnotations();
+        this.sounds = {};
         this.audioContext = null;
+        this.preloadSounds();
+    }
+
+    preloadSounds() {
+        const names = ['on', 'off', 'success', 'clear', 'record', 'copy'];
+        names.forEach(name => {
+            const audio = new Audio(chrome.runtime.getURL(`assets/${name}.wav`));
+            audio.volume = 0.3;
+            this.sounds[name] = audio;
+        });
+    }
+
+    playSound(type) {
+        const audio = this.sounds[type];
+        if (audio) {
+            audio.currentTime = 0;
+            audio.play().catch(() => {});
+        }
     }
 
     initUrlWatcher() {
@@ -43,10 +62,9 @@ class AgentationContentScript {
                 this.loadAnnotations();
             }
         };
-        // Catch pushState/replaceState
         const wrapHistory = (method) => {
             const orig = history[method];
-            history[method] = function() {
+            history[method] = function () {
                 const result = orig.apply(this, arguments);
                 check();
                 return result;
@@ -56,69 +74,6 @@ class AgentationContentScript {
         wrapHistory('replaceState');
         window.addEventListener('popstate', check);
         window.addEventListener('hashchange', check);
-    }
-
-    initAudio() {
-        if (!this.audioContext) {
-            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        }
-        if (this.audioContext.state === 'suspended') {
-            this.audioContext.resume();
-        }
-    }
-
-    playSound(type) {
-        try {
-            this.initAudio();
-            const oscillator = this.audioContext.createOscillator();
-            const gainNode = this.audioContext.createGain();
-
-            oscillator.connect(gainNode);
-            gainNode.connect(this.audioContext.destination);
-
-            const now = this.audioContext.currentTime;
-
-            if (type === 'on') {
-                // High pitch short blip
-                oscillator.type = 'sine';
-                oscillator.frequency.setValueAtTime(800, now);
-                oscillator.frequency.exponentialRampToValueAtTime(1200, now + 0.1);
-                gainNode.gain.setValueAtTime(0.1, now);
-                gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
-                oscillator.start(now);
-                oscillator.stop(now + 0.1);
-            } else if (type === 'off') {
-                // Low pitch short blip
-                oscillator.type = 'sine';
-                oscillator.frequency.setValueAtTime(400, now);
-                oscillator.frequency.exponentialRampToValueAtTime(200, now + 0.15);
-                gainNode.gain.setValueAtTime(0.1, now);
-                gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
-                oscillator.start(now);
-                oscillator.stop(now + 0.15);
-            } else if (type === 'success') {
-                // Success chime (ascending)
-                oscillator.type = 'sine';
-                oscillator.frequency.setValueAtTime(500, now);
-                oscillator.frequency.linearRampToValueAtTime(1000, now + 0.1);
-                gainNode.gain.setValueAtTime(0.1, now);
-                gainNode.gain.linearRampToValueAtTime(0.01, now + 0.3);
-                oscillator.start(now);
-                oscillator.stop(now + 0.3);
-            } else if (type === 'clear') {
-                // Clear/Trash sound (descending sawtooth)
-                oscillator.type = 'sawtooth';
-                oscillator.frequency.setValueAtTime(150, now);
-                oscillator.frequency.exponentialRampToValueAtTime(50, now + 0.2);
-                gainNode.gain.setValueAtTime(0.1, now);
-                gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
-                oscillator.start(now);
-                oscillator.stop(now + 0.2);
-            }
-
-        } catch (e) {
-            console.error('Audio play failed', e);
-        }
     }
 
     initOverlay() {
@@ -250,7 +205,7 @@ class AgentationContentScript {
         if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
             navigator.clipboard.writeText(output).then(() => {
                 this.showToast('Copy successful');
-                this.playSound('success');
+                this.playSound('copy');
             }).catch(err => {
                 console.warn('Navigator clipboard failed, trying fallback:', err);
                 this.copyToClipboardFallback(output);
@@ -316,13 +271,13 @@ class AgentationContentScript {
                 if (ant.payload) output += `**Payload**: \`\`\`\n${ant.payload}\n\`\`\`\n`;
                 if (ant.response) output += `**Response**: \`\`\`\n${ant.response}\n\`\`\`\n`;
                 if (ant.initiator) output += `**Initiator**: ${ant.initiator}\n`;
-                output += `**Feedback**: ${ant.feedback}\n`;
+                output += `**Instruction**: ${ant.feedback}\n`;
             } else {
                 output += `\n`;
                 output += `**Target**: \`${ant.selector}\`\n`;
-                output += `**Feedback**: ${ant.feedback}\n`;
                 output += `**TagName**: ${ant.tagName}\n`;
-                if (ant.content) output += `**Inner Content**: ${this.summarizeContent(ant.content)}\n`;
+                if (ant.content) output += `**Inner Content**: ${this.summarizeContent(ant.content, 1, 100)}\n`;
+                output += `**Instruction**: ${ant.feedback}\n`;
             }
         });
         return output;
@@ -532,13 +487,13 @@ class AgentationContentScript {
         const modalShadow = darkMode
             ? '0 8px 30px rgba(200,200,200,0.15), 0 0 0 1px rgba(255,255,255,0.08)'
             : '0 8px 30px rgba(0,0,0,0.25)';
-        iframe.style.cssText = `position:fixed;width:320px;height:220px;border:none;z-index:2147483647;background:transparent;border-radius:12px;box-shadow:${modalShadow};`;
+        iframe.style.cssText = `position:fixed;width:340px;height:230px;border:none;z-index:2147483647;background:transparent;border-radius:12px;box-shadow:${modalShadow};`;
 
         document.body.appendChild(iframe);
 
         // Position iframe at click coordinates, or fallback to element position
-        const modalW = 320;
-        const modalH = 220;
+        const modalW = 340;
+        const modalH = 230;
         const pad = 10;
         let left, top;
 
@@ -586,7 +541,7 @@ class AgentationContentScript {
         const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
         iframeDoc.open();
         const removeBtnStyle = existingIndex !== -1 ? '' : 'display:none;';
-        iframeDoc.write(`<!DOCTYPE html><html><head><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'Segoe UI',Tahoma,sans-serif;padding:16px;background:${c.bg};color:${c.text};border-radius:12px;}.header{font-size:12px;color:${c.muted};border-bottom:1px solid ${c.border};padding-bottom:8px;margin-bottom:12px;}.code{background:${c.codeBg};color:${c.muted};padding:2px 6px;border-radius:4px;font-family:monospace;font-size:11px;display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}textarea{width:100%;height:80px;padding:8px;border:1px solid ${c.inputBorder};border-radius:6px;resize:none;font-family:inherit;font-size:14px;outline:none;margin-bottom:12px;background:${c.inputBg};color:${c.text};}textarea:focus{border-color:${c.focus};}.footer{display:flex;align-items:center;}.footer-right{display:flex;gap:8px;margin-left:auto;}button{padding:8px 16px;border-radius:6px;border:none;cursor:pointer;font-size:13px;font-weight:500;}.cancel-btn{background:${c.cancelBg};color:${c.cancelText};}.cancel-btn:hover{background:${isDark ? '#475569' : '#e0e0e0'};}.add-btn{background:#4285f4;color:white;}.add-btn:hover{background:#3367d6;}.remove-btn{background:${c.removeBg};color:${c.removeText};padding:8px 12px;}.remove-btn:hover{background:${c.removeBgHover};}</style></head><body><div class="header"><span class="code">${safeSelector}</span></div><textarea id="feedback" placeholder="Enter your feedback here...">${safeFeedback}</textarea><div class="footer"><button class="remove-btn" id="removeBtn" style="${removeBtnStyle}">Remove</button><div class="footer-right"><button class="cancel-btn" id="cancelBtn">Cancel</button><button class="add-btn" id="addBtn">Save</button></div></div></body></html>`);
+        iframeDoc.write(`<!DOCTYPE html><html><head><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'Segoe UI',Tahoma,sans-serif;padding:16px;background:${c.bg};color:${c.text};border-radius:12px;}.header{font-size:12px;color:${c.muted};border-bottom:1px solid ${c.border};padding-bottom:8px;margin-bottom:12px;}.code{background:${c.codeBg};color:${c.muted};padding:2px 6px;border-radius:4px;font-family:monospace;font-size:11px;display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}textarea{width:100%;height:80px;padding:8px;border:1px solid ${c.inputBorder};border-radius:6px;resize:none;font-family:inherit;font-size:14px;outline:none;margin-bottom:12px;background:${c.inputBg};color:${c.text};}textarea:focus{border-color:${c.focus};}.footer{display:flex;align-items:center;}.footer-right{display:flex;gap:8px;margin-left:auto;}button{padding:8px 16px;border-radius:6px;border:none;cursor:pointer;font-size:13px;font-weight:500;}.cancel-btn{background:${c.cancelBg};color:${c.cancelText};}.cancel-btn:hover{background:${isDark ? '#475569' : '#e0e0e0'};}.add-btn{background:#4285f4;color:white;}.add-btn:hover{background:#3367d6;}.remove-btn{background:${c.removeBg};color:${c.removeText};padding:8px 12px;}.remove-btn:hover{background:${c.removeBgHover};}.mic-btn{padding:8px 12px;background:${c.cancelBg};color:${c.cancelText};border:none;border-radius:6px;cursor:pointer;display:inline-flex;align-items:center;gap:4px;}.mic-btn:hover{opacity:0.85;}.mic-btn.recording{background:#ef4444;color:white;animation:micPulse 1.4s infinite;}.mic-btn.ready{background:#22c55e;color:white;animation:readyPulse 1.4s infinite;}.mic-btn.processing{background:#4285f4;color:white;}@keyframes micPulse{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,0.5);}50%{box-shadow:0 0 0 6px rgba(239,68,68,0);}@keyframes readyPulse{0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,0.5);}50%{box-shadow:0 0 0 6px rgba(34,197,94,0);}</style></head><body><div class="header"><span class="code">${safeSelector}</span></div><textarea id="feedback" placeholder="Dictate or write the instruction...">${safeFeedback}</textarea><div class="footer"><button class="remove-btn" id="removeBtn" style="${removeBtnStyle}">Remove</button><div class="footer-right"><button class="mic-btn" id="micBtn" title="Dictate with voice"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></button><button class="cancel-btn" id="cancelBtn">Cancel</button><button class="add-btn" id="addBtn">Save</button></div></div></body></html>`);
         iframeDoc.close();
 
         const textarea = iframeDoc.getElementById('feedback');
@@ -628,6 +583,56 @@ class AgentationContentScript {
                     this.removeAnnotation(existingIndex);
                 }
                 closeModal();
+            });
+        }
+
+        const micBtn = iframeDoc.getElementById('micBtn');
+        if (micBtn) {
+            let micState = 'idle';
+            micBtn.addEventListener('click', async () => {
+                if (micState === 'idle') {
+                    this.playSound('record');
+                    micState = 'recording';
+                    micBtn.classList.add('recording');
+                    try {
+                        const r = await chrome.runtime.sendMessage({ action: 'voice:start' });
+                        if (!r || !r.ok) {
+                            micState = 'idle';
+                            micBtn.classList.remove('recording');
+                            alert('Could not record: ' + ((r && r.error) || 'unknown'));
+                        } else {
+                            setTimeout(() => {
+                                if (micState === 'recording') {
+                                    micBtn.classList.remove('recording');
+                                    micBtn.classList.add('ready');
+                                    micState = 'ready';
+                                }
+                            }, 400);
+                        }
+                    } catch (e) {
+                        micState = 'idle';
+                        micBtn.classList.remove('recording');
+                        alert('Error: ' + e.message);
+                    }
+                } else if (micState === 'recording' || micState === 'ready') {
+                    micState = 'processing';
+                    micBtn.classList.remove('recording', 'ready');
+                    micBtn.classList.add('processing');
+                    try {
+                        const r = await chrome.runtime.sendMessage({ action: 'voice:stopAndProcess' });
+                        micState = 'idle';
+                        micBtn.classList.remove('processing');
+                        if (r && r.ok && r.text) {
+                            textarea.value = r.text;
+                        } else {
+                            alert('Error: ' + ((r && r.error) || 'no transcription'));
+                        }
+                    } catch (e) {
+                        micState = 'idle';
+                        micBtn.classList.remove('processing');
+                        alert('Error: ' + e.message);
+                    }
+                }
             });
         }
 
@@ -1228,7 +1233,7 @@ button{padding:8px 16px;border-radius:6px;border:none;cursor:pointer;font-size:1
     ${safePayload ? `<div class="detail-box"><div class="label">Payload</div>${safePayload}</div>` : ''}
     ${safeResponse ? `<div class="detail-box"><div class="label">Response</div>${safeResponse}</div>` : ''}
 </div>
-<textarea id="feedback" placeholder="Describe the issue or observation about this request…"></textarea>
+<textarea id="feedback" placeholder="Describe the change or instruction…"></textarea>
 <div class="footer">
     <button class="cancel-btn" id="cancelBtn">Cancel</button>
     <button class="add-btn" id="addBtn">Save</button>
@@ -1359,7 +1364,7 @@ button{padding:8px 16px;border-radius:6px;border:none;cursor:pointer;font-size:1
     ${safePayload ? `<div class="detail-box"><div class="label">Payload</div>${safePayload}</div>` : ''}
     ${safeResponse ? `<div class="detail-box"><div class="label">Response</div>${safeResponse}</div>` : ''}
 </div>
-<textarea id="feedback" placeholder="Describe the issue or observation about this request…">${safeFeedback}</textarea>
+<textarea id="feedback" placeholder="Describe the change or instruction…">${safeFeedback}</textarea>
 <div class="footer">
     <button class="remove-btn" id="removeBtn">Remove</button>
     <div class="footer-right">
