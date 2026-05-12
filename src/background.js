@@ -57,13 +57,14 @@ chrome.commands.onCommand.addListener((command, tab) => {
   } else if (command === 'toggle_inspect' || command === 'clear_annotations') {
     if (tab && tab.id) {
       const action = command === 'toggle_inspect' ? 'toggleInspect' : 'clearAnnotations';
-      chrome.tabs.sendMessage(tab.id, { action }).catch(() => {});
+      // §Ö±¶ÁäÄ²µoªº©R¥O·|¼Ð°O source='shortcut'¡AÅý¤º®e¸}¥»¨M©w¬O§_¼½©ñ­µ®Ä¡C
+      chrome.tabs.sendMessage(tab.id, { action, source: 'shortcut' }).catch(() => {});
     }
   }
 });
 
 // =============================================================
-// VOICE â€” Offscreen Document + STT + LLM
+// VOICE ??Offscreen Document + STT + LLM
 // =============================================================
 
 const OFFSCREEN_PATH = 'src/offscreen/offscreen.html';
@@ -144,7 +145,7 @@ async function transcribeAudioEndpoint(audioBase64, sttCfg) {
 }
 
 async function transcribeChatCompletions(audioBase64, sttCfg) {
-  // OpenRouter espera WAV en input_audio. Convertimos WebM â†’ WAV vÃ­a offscreen.
+  // OpenRouter espera WAV en input_audio. Convertimos WebM ??WAV vÃ­a offscreen.
   let wavBase64 = audioBase64;
   try {
     const convertRes = await chrome.runtime.sendMessage({
@@ -253,7 +254,7 @@ async function stopAndProcess() {
     throw new Error((res && res.error) || 'Could not stop the recording');
   }
   const audioBase64 = res.audio;
-  // Keep offscreen alive â€” closing it forces a fresh getUserMedia prompt next time
+  // Keep offscreen alive ??closing it forces a fresh getUserMedia prompt next time
   // and Chrome MV3 has been seen to drop the mic grant between offscreen instances.
 
   const cfg = await getConfig();

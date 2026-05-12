@@ -96,11 +96,9 @@
   </div>
 
   <div class="actions">
-    <button class="btn btn-primary" id="saveBtn">Save</button>
     <button class="btn btn-secondary" id="testSttBtn">Test STT</button>
     <button class="btn btn-secondary" id="testLlmBtn">Test LLM</button>
   </div>
-  <div class="status" id="status"></div>
 
   <details style="margin-top:24px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;cursor:pointer;font-size:0.85rem;color:var(--text-muted);">
     <summary style="font-weight:600;font-size:0.9rem;color:var(--text);cursor:pointer;">💡 How it works</summary>
@@ -111,6 +109,18 @@
       <div><strong>📋 Workflow</strong> — Click the mic button 🎤 in any annotation modal → button turns red (starting) → turns green (ready, speak now) → click again to transcribe → text appears in the input. Use <strong>Test STT</strong> and <strong>Test LLM</strong> buttons to verify each step.</div>
     </div>
   </details>
+
+  <h2>Shortcut Sound Effects</h2>
+  <div class="toggle-row" style="border:2px solid var(--primary);padding:12px 16px;border-radius:8px;margin-bottom:8px;font-weight:600;background:var(--surface);">
+    <input type="checkbox" id="shortcutSoundEnabled" checked>
+    <label for="shortcutSoundEnabled" style="cursor:pointer;user-select:none;">Play sound effects triggered by keyboard shortcuts</label>
+  </div>
+  <div class="hint">This only affects shortcut-triggered sounds such as Alt+O, Alt+N, Alt+X, Alt+C, and Escape.</div>
+
+  <div style="margin-top:24px;display:flex;flex-direction:column;gap:8px;">
+    <button class="btn btn-primary" id="saveBtn" style="min-width:120px;justify-content:center;text-align:center;">Save</button>
+    <div class="status" id="status"></div>
+  </div>
 
   <script src="settings.js"></script>
 </body>

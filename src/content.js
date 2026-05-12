@@ -33,7 +33,15 @@ class AgentationContentScript {
         this.loadAnnotations();
         this.sounds = {};
         this.audioContext = null;
+        this.shortcutSoundsEnabled = true;
         this.preloadSounds();
+        this.loadShortcutSoundPreference();
+
+        chrome.storage.onChanged.addListener((changes, area) => {
+            if (area === 'local' && changes.shortcut_sound_enabled) {
+                this.shortcutSoundsEnabled = changes.shortcut_sound_enabled.newValue !== false;
+            }
+        });
     }
 
     preloadSounds() {
@@ -45,7 +53,29 @@ class AgentationContentScript {
         });
     }
 
-    playSound(type) {
+    /**
+     * 載入快捷鍵音效的開關狀態。
+     * 參數：無。
+     * 回傳值：無。
+     */
+    loadShortcutSoundPreference() {
+        chrome.storage.local.get(['shortcut_sound_enabled'], (result) => {
+            this.shortcutSoundsEnabled = result.shortcut_sound_enabled !== false;
+        });
+    }
+
+    /**
+     * 播放指定音效；若來源是快捷鍵且使用者關閉音效，則直接略過。
+     * 參數：
+     * - type：音效名稱。
+     * - source：觸發來源，預設為 general，shortcut 代表快捷鍵觸發。
+     * 回傳值：無。
+     */
+    playSound(type, source = 'general') {
+        if (source === 'shortcut' && !this.shortcutSoundsEnabled) {
+            return;
+        }
+
         const audio = this.sounds[type];
         if (audio) {
             audio.currentTime = 0;
@@ -112,7 +142,7 @@ class AgentationContentScript {
                     this.activeModal = null;
                 }
                 this.hoveredElement = null;
-                this.playSound('off');
+                this.playSound('off', 'shortcut');
                 safeSendRuntime({ action: 'inspectModeChanged', inspectMode: false });
             }
 
@@ -120,18 +150,19 @@ class AgentationContentScript {
             // Use e.code because on Mac, Option+C produces 'ç' as e.key
             if (e.altKey && e.code === 'KeyC') {
                 e.preventDefault();
-                this.copyPromptToClipboard();
+                this.copyPromptToClipboard('shortcut');
             }
 
             // Alt+N to toggle network capture
             if (e.altKey && e.code === 'KeyN') {
                 e.preventDefault();
-                this.toggleNetworkCapture();
+                this.toggleNetworkCapture('shortcut');
             }
         });
 
         chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             if (request.action === 'toggleInspect') {
+                const source = request.source || 'general';
                 if (typeof request.value !== 'undefined') {
                     this.inspectMode = request.value;
                 } else {
@@ -145,16 +176,16 @@ class AgentationContentScript {
                         this.activeModal = null;
                     }
                     this.hoveredElement = null;
-                    this.playSound('off');
+                    this.playSound('off', source);
                 } else {
-                    this.playSound('on');
+                    this.playSound('on', source);
                 }
                 safeSendRuntime({ action: 'inspectModeChanged', inspectMode: this.inspectMode });
                 sendResponse({ status: 'ok', inspectMode: this.inspectMode });
             } else if (request.action === 'getInspectStatus') {
                 sendResponse({ status: 'ok', inspectMode: this.inspectMode });
             } else if (request.action === 'clearAnnotations') {
-                this.clearAllAnnotations();
+                this.clearAllAnnotations(request.source || 'general');
                 sendResponse({ status: 'ok' });
             } else if (request.action === 'getPrompt') {
                 const prompt = this.generatePromptText();
@@ -163,7 +194,7 @@ class AgentationContentScript {
                 this.loadAnnotations();
                 sendResponse({ status: 'ok' });
             } else if (request.action === 'toggleNetworkCapture') {
-                this.toggleNetworkCapture();
+                this.toggleNetworkCapture(request.source || 'general');
                 sendResponse({ status: 'ok', capturing: this.networkCapture });
             } else if (request.action === 'getNetworkCaptureStatus') {
                 sendResponse({ status: 'ok', capturing: this.networkCapture });
@@ -192,7 +223,13 @@ class AgentationContentScript {
         this.mutationObserver.observe(document.body, { childList: true, subtree: true });
     }
 
-    copyPromptToClipboard() {
+    /**
+     * 將目前頁面的 prompt 複製到剪貼簿。
+     * 參數：
+     * - source：觸發來源，shortcut 代表快捷鍵觸發。
+     * 回傳值：無。
+     */
+    copyPromptToClipboard(source = 'general') {
         const output = this.generatePromptText();
         if (!output) {
             this.showToast('No annotations to copy', true);
@@ -205,18 +242,25 @@ class AgentationContentScript {
         if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
             navigator.clipboard.writeText(output).then(() => {
                 this.showToast('Copy successful');
-                this.playSound('copy');
+                this.playSound('copy', source);
             }).catch(err => {
                 console.warn('Navigator clipboard failed, trying fallback:', err);
-                this.copyToClipboardFallback(output);
+                this.copyToClipboardFallback(output, source);
             });
         } else {
             // 直接使用 Fallback
-            this.copyToClipboardFallback(output);
+            this.copyToClipboardFallback(output, source);
         }
     }
 
-    copyToClipboardFallback(text) {
+    /**
+     * 當 Clipboard API 失敗時，改用 textarea + execCommand 作為複製備援。
+     * 參數：
+     * - text：要複製到剪貼簿的文字。
+     * - source：觸發來源，shortcut 代表快捷鍵觸發。
+     * 回傳值：無。
+     */
+    copyToClipboardFallback(text, source = 'general') {
         try {
             const textArea = document.createElement("textarea");
             textArea.value = text;
@@ -236,7 +280,7 @@ class AgentationContentScript {
 
             if (successful) {
                 this.showToast('Copy successful');
-                this.playSound('success');
+                this.playSound('success', source);
             } else {
                 throw new Error('execCommand copy failed');
             }
@@ -916,7 +960,13 @@ class AgentationContentScript {
         });
     }
 
-    clearAllAnnotations() {
+    /**
+     * 清除目前頁面的所有註解與對應的快取資料。
+     * 參數：
+     * - source：觸發來源，shortcut 代表快捷鍵觸發。
+     * 回傳值：無。
+     */
+    clearAllAnnotations(source = 'general') {
         // Remove all badges
         document.querySelectorAll('.agentation-badge').forEach(el => el.remove());
 
@@ -933,7 +983,7 @@ class AgentationContentScript {
         const origin = getOrigin(window.location.href);
         chrome.storage.local.remove(['annotations_' + origin], () => {
             console.log('[UISelector2AI] All annotations cleared');
-            this.playSound('clear');
+            this.playSound('clear', source);
             chrome.runtime.sendMessage({ action: 'annotationsUpdated' }, (response) => {
                 if (chrome.runtime.lastError) { /* ignore */ }
             });
@@ -985,16 +1035,22 @@ class AgentationContentScript {
         });
     }
 
-    toggleNetworkCapture() {
+    /**
+     * 切換網路擷取功能的開關狀態。
+     * 參數：
+     * - source：觸發來源，shortcut 代表快捷鍵觸發。
+     * 回傳值：無。
+     */
+    toggleNetworkCapture(source = 'general') {
         this.networkCapture = !this.networkCapture;
         if (this.networkCapture) {
             this.capturedRequests = [];
             this._networkPanelDocked = 'bottom';
             this.showNetworkPanel();
-            this.playSound('on');
+            this.playSound('on', source);
         } else {
             this.hideNetworkPanel();
-            this.playSound('off');
+            this.playSound('off', source);
         }
         chrome.runtime.sendMessage({ action: 'networkCaptureChanged', capturing: this.networkCapture }, () => {
             if (chrome.runtime.lastError) { /* ignore */ }
