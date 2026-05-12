@@ -6,8 +6,13 @@
   "permissions": [
     "activeTab",
     "storage",
-    "sidePanel"
+    "sidePanel",
+    "offscreen"
   ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "options_page": "src/settings/settings.html",
   "background": {
     "service_worker": "src/background.js"
   },
@@ -22,6 +27,22 @@
       "css": [
         "src/styles.css"
       ]
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "src/interceptor.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["src/offscreen/offscreen.html", "assets/*"],
+      "matches": ["<all_urls>"]
     }
   ],
   "icons": {

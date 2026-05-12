@@ -121,6 +121,48 @@
             word-break: break-word;
         }
 
+        /* Network annotation cards */
+        .card.card-network {
+            border-left: 3px solid #3b82f6;
+        }
+
+        .card-network .card-header .method-badge {
+            font-size: 0.65rem;
+            font-weight: 700;
+            color: white;
+            padding: 1px 6px;
+            border-radius: 3px;
+            flex-shrink: 0;
+        }
+
+        .card-network .card-header .method-badge.get { background: #22c55e; }
+        .card-network .card-header .method-badge.post { background: #3b82f6; }
+        .card-network .card-header .method-badge.put,
+        .card-network .card-header .method-badge.patch { background: #f59e0b; }
+        .card-network .card-header .method-badge.delete { background: #ef4444; }
+        .card-network .card-header .method-badge.options { background: #8b5cf6; }
+
+        .card-network .req-url {
+            font-family: monospace;
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .card-network .req-meta {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            flex-shrink: 0;
+        }
+
+        .card-network .req-meta .status-ok { color: #22c55e; font-weight: 600; }
+        .card-network .req-meta .status-err { color: #ef4444; font-weight: 600; }
+        .card-network .req-meta .status-warn { color: #f59e0b; font-weight: 600; }
+
         /* Drag & drop */
         .card[draggable="true"] {
             cursor: grab;
@@ -139,10 +181,212 @@
             border-top: 2px solid var(--primary);
         }
 
+        /* Context area – edit mode (textarea) */
+        .context-area {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.25s ease, padding 0.25s ease, opacity 0.15s ease;
+            opacity: 0;
+            padding: 0 var(--space-4);
+            background-color: var(--surface);
+            border-bottom: 1px solid transparent;
+        }
+
+        .context-area.open {
+            max-height: 200px;
+            opacity: 1;
+            padding: var(--space-3) var(--space-4);
+            border-bottom-color: var(--border);
+        }
+
+        .context-area textarea {
+            width: 100%;
+            min-height: 60px;
+            max-height: 100px;
+            resize: vertical;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: inherit;
+            font-size: 0.8rem;
+            padding: var(--space-2);
+            outline: none;
+            transition: border-color 0.15s ease;
+            box-sizing: border-box;
+        }
+
+        .context-area textarea:focus {
+            border-color: var(--primary);
+        }
+
+        .context-area textarea::placeholder {
+            color: var(--text-muted);
+        }
+
+        .context-area .context-edit-actions {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: var(--space-2);
+        }
+
+        .context-area .context-edit-actions button:not(.mic-btn) {
+            font-size: 0.75rem;
+            padding: 0 12px;
+            height: 28px;
+            border: none;
+            border-radius: var(--radius);
+            cursor: pointer;
+            background: var(--primary);
+            color: white;
+            font-weight: 500;
+            transition: opacity 0.15s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .context-area .context-edit-actions button:not(.mic-btn):hover {
+            opacity: 0.85;
+        }
+
+        /* Context display – saved paragraph shown as header sub-section */
+        .context-display {
+            display: none;
+            padding: var(--space-2) var(--space-4);
+            background-color: var(--surface);
+            border-bottom: 1px solid var(--border);
+            transition: background-color 0.15s ease;
+            align-items: flex-start;
+            gap: 6px;
+        }
+
+        .context-display:hover {
+            background-color: var(--ghost-hover-bg);
+        }
+
+        .context-display.visible {
+            display: flex;
+        }
+
+        .context-display p {
+            margin: 0;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            word-break: break-word;
+            line-height: 1.4;
+            flex: 1;
+            cursor: pointer;
+        }
+
+        .context-remove-btn {
+            flex-shrink: 0;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 2px;
+            border-radius: var(--radius-sm);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0.5;
+            transition: all 0.15s ease;
+            margin-top: 1px;
+        }
+
+        .context-remove-btn:hover {
+            opacity: 1;
+            color: var(--danger);
+            background-color: var(--danger-bg);
+        }
+
+        /* URL group headers */
+        .url-group-header {
+            font-size: 0.7rem;
+            font-weight: 600;
+            font-family: var(--font-mono, monospace);
+            color: var(--text-muted);
+            padding: var(--space-2) 0;
+            margin-top: var(--space-2);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .url-group-header:first-child {
+            margin-top: 0;
+        }
+
         /* Toast override for sidepanel context */
         #toast {
             width: fit-content;
             white-space: nowrap;
+        }
+
+        /* Voice mic button */
+        .mic-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 5px 10px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text-muted);
+            border-radius: var(--radius);
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .mic-btn:hover {
+            color: var(--primary);
+            border-color: var(--primary);
+        }
+        .mic-btn.recording {
+            background: #ef4444;
+            color: white;
+            border-color: #ef4444;
+            animation: micPulse 1.4s infinite;
+        }
+        .mic-btn.ready {
+            background: #22c55e;
+            color: white;
+            border-color: #22c55e;
+            animation: readyPulse 1.4s infinite;
+        }
+        .mic-btn.processing {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+        @keyframes micPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.5); }
+            50% { box-shadow: 0 0 0 6px rgba(239,68,68,0); }
+        }
+        @keyframes readyPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0.5); }
+            50% { box-shadow: 0 0 0 6px rgba(34,197,94,0); }
+        }
+        .context-area .context-edit-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .mic-timer {
+            display: inline-block;
+            overflow: hidden;
+            white-space: nowrap;
+            max-width: 0;
+            opacity: 0;
+            transition: max-width 0.3s ease, opacity 0.3s ease;
+            font-size: 10px;
+            font-weight: 600;
+            text-align: center;
+        }
+        .mic-timer.show {
+            max-width: 35px;
+            opacity: 1;
         }
     </style>
 </head>
@@ -151,6 +395,12 @@
     <header>
         <h2>Annotations</h2>
         <div class="header-actions">
+            <button id="networkCaptureBtn" title="Toggle Network Capture (Alt+N)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                </svg>
+            </button>
             <button id="toggleInspectBtn" title="Toggle Inspect Mode">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="12" cy="12" r="10" />
@@ -158,6 +408,18 @@
                     <line x1="6" x2="2" y1="12" y2="12" />
                     <line x1="12" x2="12" y1="6" y2="2" />
                     <line x1="12" x2="12" y1="22" y2="18" />
+                </svg>
+            </button>
+            <button id="contextBtn" title="Initial Context">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                    <path d="m15 5 4 4" />
+                </svg>
+            </button>
+            <button id="openSettingsBtn" title="Voice Settings">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
                 </svg>
             </button>
             <button id="closePanelBtn" title="Close Side Panel">
@@ -168,6 +430,32 @@
             </button>
         </div>
     </header>
+
+    <div id="contextDisplay" class="context-display">
+        <p id="contextText" title="Click to edit context"></p>
+        <button id="contextRemoveBtn" class="context-remove-btn" title="Remove context">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+        </button>
+    </div>
+
+    <div id="contextArea" class="context-area">
+        <textarea id="contextInput" placeholder="Describe the general context or dictate with the microphone..." spellcheck="false"></textarea>
+        <div class="context-edit-actions">
+            <button id="contextMicBtn" class="mic-btn" title="Dictate with voice">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                    <line x1="12" y1="19" x2="12" y2="23"/>
+                    <line x1="8" y1="23" x2="16" y2="23"/>
+                </svg>
+                <span id="contextMicTimer" class="mic-timer"></span>
+            </button>
+            <button id="contextSaveBtn">Set</button>
+        </div>
+    </div>
 
     <div id="annotationList">
         <!-- JS injects cards here -->
@@ -189,11 +477,12 @@
                 <line x1="10" x2="10" y1="11" y2="17" />
                 <line x1="14" x2="14" y1="11" y2="17" />
             </svg>
-            Clear All
+            Clear All Annotations
         </button>
     </footer>
 
     <div id="toast" class="toast">Copy successful</div>
+    <script src="../voice/voice-client.js"></script>
     <script src="sidepanel.js"></script>
 </body>
 

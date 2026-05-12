@@ -1,14 +1,46 @@
 // src/sidepanel/sidepanel.js
 
+function getOrigin(url) {
+    try { return new URL(url).origin; } catch { return url; }
+}
+
+function safeSendTab(tabId, msg) {
+    chrome.tabs.sendMessage(tabId, msg).catch(() => {});
+}
+
 function loadAnnotations() {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         if (tabs.length === 0) return;
-        const tabId = tabs[0].id; // Not used for storage key directly in this simplified version, using URL
         const url = tabs[0].url;
+        const origin = getOrigin(url);
+        const key = 'annotations_' + origin;
 
-        chrome.storage.local.get(['annotations_' + url], (result) => {
-            const annotations = result['annotations_' + url] || [];
-            renderAnnotations(annotations);
+        // Migration: check for legacy per-URL keys
+        chrome.storage.local.get(null, (all) => {
+            const legacyPrefix = 'annotations_' + origin + '/';
+            const legacyKeys = Object.keys(all).filter(k =>
+                k !== key && k.startsWith(legacyPrefix)
+            );
+            if (legacyKeys.length > 0) {
+                let existing = all[key] || [];
+                legacyKeys.forEach(lk => {
+                    const legacyAnns = all[lk] || [];
+                    legacyAnns.forEach(a => {
+                        if (!existing.find(e => e.id === a.id)) {
+                            existing.push(a);
+                        }
+                    });
+                });
+                chrome.storage.local.set({ [key]: existing }, () => {
+                    chrome.storage.local.remove(legacyKeys, () => {
+                        console.log('[UISelector2AI] Sidepanel migrated legacy keys:', legacyKeys);
+                        renderAnnotations(existing);
+                    });
+                });
+            } else {
+                const annotations = all[key] || [];
+                renderAnnotations(annotations);
+            }
         });
     });
 }
@@ -25,26 +57,61 @@ function renderAnnotations(annotations) {
     }
 
     let dragFromIndex = null;
-    let didDrag = false; // Flag to distinguish a drag from a simple click on the card
+    let didDrag = false;
+    let lastUrl = null;
 
     annotations.forEach((ant, index) => {
+        // URL group header
+        if (ant.url !== lastUrl) {
+            const header = document.createElement('div');
+            header.className = 'url-group-header';
+            try {
+                const parsed = new URL(ant.url);
+                header.textContent = parsed.pathname + parsed.search;
+            } catch { header.textContent = ant.url; }
+            header.title = ant.url;
+            list.appendChild(header);
+            lastUrl = ant.url;
+        }
+
         const div = document.createElement('div');
-        div.className = 'card';
         div.draggable = true;
         div.dataset.index = index;
         div.style.cursor = 'pointer';
 
-        const safeContent = (ant.content || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-        div.innerHTML = `
-            <div class="card-header">
-                <span class="code-badge">${ant.tagName || 'ELEMENT'}</span>
-                ${safeContent ? `<span class="text-xs text-muted inner-content" title="${safeContent}">${safeContent}</span>` : ''}
-                <span class="text-xs text-muted card-index">#${index + 1}</span>
-            </div>
-            <div class="card-feedback">${ant.feedback}</div>
-        `;
+        if (ant.type === 'network') {
+            div.className = 'card card-network';
+            const method = (ant.method || 'GET').toUpperCase();
+            const methodClass = method.toLowerCase();
+            const shortUrl = (ant.requestUrl || '').length > 40
+                ? '…' + (ant.requestUrl || '').slice(-38)
+                : (ant.requestUrl || '');
+            const safeUrl = shortUrl.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            const statusClass = ant.status >= 200 && ant.status < 300 ? 'status-ok'
+                : ant.status >= 400 || ant.status === 0 ? 'status-err' : 'status-warn';
 
-        // Start drag: visually mark the card and record its origin position
+            div.innerHTML = `
+                <div class="card-header">
+                    <span class="method-badge ${methodClass}">${method}</span>
+                    <span class="req-url" title="${(ant.requestUrl || '').replace(/"/g, '&quot;')}">${safeUrl}</span>
+                    <span class="req-meta"><span class="${statusClass}">${ant.status || 'ERR'}</span> ${ant.duration}ms</span>
+                    <span class="text-xs text-muted card-index">#${index + 1}</span>
+                </div>
+                <div class="card-feedback">${ant.feedback}</div>
+            `;
+        } else {
+            div.className = 'card';
+            const safeContent = (ant.content || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            div.innerHTML = `
+                <div class="card-header">
+                    <span class="code-badge">${ant.tagName || 'ELEMENT'}</span>
+                    ${safeContent ? `<span class="text-xs text-muted inner-content" title="${safeContent}">${safeContent}</span>` : ''}
+                    <span class="text-xs text-muted card-index">#${index + 1}</span>
+                </div>
+                <div class="card-feedback">${ant.feedback}</div>
+            `;
+        }
+
         div.addEventListener('dragstart', (e) => {
             didDrag = true;
             dragFromIndex = index;
@@ -52,7 +119,6 @@ function renderAnnotations(annotations) {
             e.dataTransfer.effectAllowed = 'move';
         });
 
-        // Clean up styles on drop; reset didDrag on the next tick to avoid blocking the click
         div.addEventListener('dragend', () => {
             div.classList.remove('dragging');
             list.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
@@ -60,16 +126,18 @@ function renderAnnotations(annotations) {
             setTimeout(() => { didDrag = false; }, 0);
         });
 
-        // Skip opening edit if the user only dragged; didDrag distinguishes drag from intentional click
         div.addEventListener('click', () => {
             if (didDrag) return;
             chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
                 if (tabs.length === 0) return;
-                chrome.tabs.sendMessage(tabs[0].id, { action: 'editAnnotation', index });
+                safeSendTab(tabs[0].id, {
+                    action: 'editAnnotation',
+                    annotationId: annotations[index].id,
+                    annotationUrl: annotations[index].url
+                });
             });
         });
 
-        // Visually indicate a valid drop zone while dragging over it
         div.addEventListener('dragover', (e) => {
             e.preventDefault();
             e.dataTransfer.dropEffect = 'move';
@@ -79,12 +147,10 @@ function renderAnnotations(annotations) {
             }
         });
 
-        // Remove the visual indicator when the cursor leaves the card
         div.addEventListener('dragleave', () => {
             div.classList.remove('drag-over');
         });
 
-        // On drop, reorder only if the destination differs from the origin
         div.addEventListener('drop', (e) => {
             e.preventDefault();
             div.classList.remove('drag-over');
@@ -101,13 +167,19 @@ function renderAnnotations(annotations) {
 document.getElementById('exportBtn').addEventListener('click', () => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         const url = tabs[0].url;
-        chrome.storage.local.get(['annotations_' + url], (result) => {
-            const annotations = result['annotations_' + url] || [];
-            const prompt = generatePrompt(url, annotations);
+        const origin = getOrigin(url);
+        const annKey = 'annotations_' + origin;
+        const ctxKey = 'context_' + origin;
+
+        chrome.storage.local.get([annKey, ctxKey], (result) => {
+            const annotations = result[annKey] || [];
+            const context = result[ctxKey] || '';
+            const prompt = generatePrompt(annotations, context);
             navigator.clipboard.writeText(prompt).then(() => {
                 const toast = document.getElementById('toast');
                 toast.classList.add('show');
                 setTimeout(() => { toast.classList.remove('show'); }, 3000);
+                new Audio(chrome.runtime.getURL('assets/copy.wav')).play().catch(() => {});
             });
         });
     });
@@ -117,23 +189,23 @@ document.getElementById('clearBtn').addEventListener('click', () => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         if (tabs.length === 0) return;
         const url = tabs[0].url;
+        const origin = getOrigin(url);
         const tabId = tabs[0].id;
-        chrome.storage.local.remove(['annotations_' + url], () => {
+        chrome.storage.local.remove(['annotations_' + origin], () => {
             loadAnnotations();
-            // Notify content script to remove visuals
-            chrome.tabs.sendMessage(tabId, { action: 'clearAnnotations' });
+            safeSendTab(tabId, { action: 'clearAnnotations' });
         });
     });
 });
 
 
-// Reorder using splice to move the element without losing data, and persist so the order survives a reload
 function reorderAnnotations(fromIndex, toIndex) {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         if (tabs.length === 0) return;
         const url = tabs[0].url;
+        const origin = getOrigin(url);
         const tabId = tabs[0].id;
-        const key = 'annotations_' + url;
+        const key = 'annotations_' + origin;
 
         chrome.storage.local.get([key], (result) => {
             const annotations = result[key] || [];
@@ -143,21 +215,57 @@ function reorderAnnotations(fromIndex, toIndex) {
 
             chrome.storage.local.set({ [key]: annotations }, () => {
                 renderAnnotations(annotations);
-                chrome.tabs.sendMessage(tabId, { action: 'annotationsUpdated' }).catch(() => {});
+                safeSendTab(tabId, { action: 'annotationsUpdated' });
             });
         });
     });
 }
 
-function generatePrompt(url, annotations) {
-    let output = `# Webpage Context\nURL: ${url}\n\n# Annotations\n`;
+function summarizeContent(raw, maxLines = 6, maxLen = 300) {
+    if (!raw) return '';
+    // Collapse runs of whitespace into single lines, trim each
+    const lines = raw.split(/\n+/).map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    // Deduplicate consecutive identical lines
+    const unique = lines.filter((l, i) => i === 0 || l !== lines[i - 1]);
+    const sliced = unique.slice(0, maxLines);
+    let result = sliced.join(' | ');
+    if (unique.length > maxLines) result += ' ...';
+    if (result.length > maxLen) result = result.slice(0, maxLen) + '...';
+    return result;
+}
+
+function generatePrompt(annotations, context) {
+    if (annotations.length === 0) return '';
+
+    let output = `# Webpage Annotations\n`;
+    if (context) {
+        output += `\n## Context\n${context}\n`;
+    }
+
+    // Iterate in storage order, insert page header when URL changes
+    let lastUrl = null;
     annotations.forEach((ant, index) => {
-        output += `\n## Annotation ${index + 1}\n`;
-        output += `**Target**: \`${ant.selector}\`\n`;
-        output += `**Feedback**: ${ant.feedback}\n`;
-        output += `**TagName**: ${ant.tagName}\n`;
-        if (ant.content) output += `**Inner Content**: ${ant.content}\n`;
+        if (ant.url !== lastUrl) {
+            output += `\n---\n## Page: ${ant.url}\n`;
+            lastUrl = ant.url;
+        }
+        output += `\n### Annotation ${index + 1}`;
+        if (ant.type === 'network') {
+            output += ` (Network Request)\n`;
+            output += `**Request**: \`${ant.method} ${ant.requestUrl}\` → ${ant.status} ${ant.statusText || ''} (${ant.duration}ms)\n`;
+            if (ant.payload) output += `**Payload**: \`\`\`\n${ant.payload}\n\`\`\`\n`;
+            if (ant.response) output += `**Response**: \`\`\`\n${ant.response}\n\`\`\`\n`;
+            if (ant.initiator) output += `**Initiator**: ${ant.initiator}\n`;
+            output += `**Instruction**: ${ant.feedback}\n`;
+        } else {
+            output += `\n`;
+            output += `**Target**: \`${ant.selector}\`\n`;
+            output += `**TagName**: ${ant.tagName}\n`;
+            if (ant.content) output += `**Inner Content**: ${summarizeContent(ant.content, 1, 100)}\n`;
+            output += `**Instruction**: ${ant.feedback}\n`;
+        }
     });
+
     return output;
 }
 
@@ -165,22 +273,23 @@ chrome.runtime.onMessage.addListener((request) => {
     if (request.action === 'annotationsUpdated') {
         loadAnnotations();
     }
+    if (request.action === 'inspectModeChanged') {
+        toggleInspectBtn.classList.toggle('active', request.inspectMode);
+    }
+    if (request.action === 'networkCaptureChanged') {
+        networkCaptureBtn.classList.toggle('active', request.capturing);
+    }
 });
 
-// Toggle Inspect Mode button
+// Toggle Inspect Mode button — state synced via inspectModeChanged broadcast
 const toggleInspectBtn = document.getElementById('toggleInspectBtn');
-// Delegate the toggle to the content script and sync the button's visual state with the response
 toggleInspectBtn.addEventListener('click', () => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         if (tabs.length === 0) return;
-        chrome.tabs.sendMessage(tabs[0].id, { action: 'toggleInspect' }, (response) => {
-            if (chrome.runtime.lastError) return;
-            toggleInspectBtn.classList.toggle('active', response && response.inspectMode);
-        });
+        chrome.tabs.sendMessage(tabs[0].id, { action: 'toggleInspect' }).catch(() => {});
     });
 });
 
-// Query the actual state from the content script so the button reflects whether inspect is active (prevents desync)
 function updateInspectBtnState() {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         if (tabs.length === 0) return;
@@ -191,19 +300,245 @@ function updateInspectBtnState() {
     });
 }
 
-// Send message to the background script because only it has permission to close/open the side panel
 document.getElementById('closePanelBtn').addEventListener('click', () => {
     chrome.windows.getCurrent((win) => {
-        chrome.runtime.sendMessage({ command: 'open_side_panel', windowId: win.id });
+        chrome.sidePanel.close({ windowId: win.id });
     });
 });
 
+// Context editor: two modes – edit (textarea) and display (paragraph)
+const contextBtn = document.getElementById('contextBtn');
+const contextArea = document.getElementById('contextArea');
+const contextInput = document.getElementById('contextInput');
+const contextDisplay = document.getElementById('contextDisplay');
+const contextText = document.getElementById('contextText');
+const contextSaveBtn = document.getElementById('contextSaveBtn');
+
+function showContextEdit() {
+    contextDisplay.classList.remove('visible');
+    contextArea.classList.add('open');
+    contextBtn.classList.add('active');
+    setTimeout(() => contextInput.focus(), 50);
+}
+
+function showContextDisplay(value) {
+    contextArea.classList.remove('open');
+    contextText.textContent = value;
+    contextDisplay.classList.add('visible');
+    contextBtn.classList.remove('active');
+}
+
+function hideContext() {
+    contextArea.classList.remove('open');
+    contextDisplay.classList.remove('visible');
+    contextBtn.classList.remove('active');
+}
+
+contextBtn.addEventListener('click', () => {
+    if (contextArea.classList.contains('open')) {
+        if (contextInput.value.trim()) {
+            saveContext(contextInput.value.trim());
+        } else {
+            hideContext();
+        }
+    } else {
+        showContextEdit();
+    }
+});
+
+contextSaveBtn.addEventListener('click', () => {
+    const value = contextInput.value.trim();
+    if (value) {
+        saveContext(value);
+    } else {
+        clearContext();
+    }
+});
+
+contextInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        const value = contextInput.value.trim();
+        if (value) {
+            saveContext(value);
+        } else {
+            clearContext();
+        }
+    }
+});
+
+contextText.addEventListener('click', () => {
+    showContextEdit();
+});
+
+document.getElementById('contextRemoveBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    clearContext();
+});
+
+function saveContext(value) {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs.length === 0) return;
+        const key = 'context_' + getOrigin(tabs[0].url);
+        chrome.storage.local.set({ [key]: value }, () => {
+            showContextDisplay(value);
+        });
+    });
+}
+
+function clearContext() {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs.length === 0) return;
+        const key = 'context_' + getOrigin(tabs[0].url);
+        chrome.storage.local.remove([key], () => {
+            contextInput.value = '';
+            hideContext();
+        });
+    });
+}
+
+function loadContext() {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs.length === 0) return;
+        const key = 'context_' + getOrigin(tabs[0].url);
+        chrome.storage.local.get([key], (result) => {
+            const value = result[key] || '';
+            contextInput.value = value;
+            if (value) {
+                showContextDisplay(value);
+            } else {
+                hideContext();
+            }
+        });
+    });
+}
+
+// Network Capture toggle — state synced via networkCaptureChanged broadcast
+const networkCaptureBtn = document.getElementById('networkCaptureBtn');
+networkCaptureBtn.addEventListener('click', () => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs.length === 0) return;
+        chrome.tabs.sendMessage(tabs[0].id, { action: 'toggleNetworkCapture' }).catch(() => {});
+    });
+});
+
+function updateNetworkCaptureBtnState() {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs.length === 0) return;
+        chrome.tabs.sendMessage(tabs[0].id, { action: 'getNetworkCaptureStatus' }, (response) => {
+            if (chrome.runtime.lastError) return;
+            networkCaptureBtn.classList.toggle('active', response && response.capturing);
+        });
+    });
+}
+
 // Initial load
 loadAnnotations();
+loadContext();
 updateInspectBtnState();
+updateNetworkCaptureBtnState();
+
+// Settings button → open options page
+const openSettingsBtn = document.getElementById('openSettingsBtn');
+if (openSettingsBtn) {
+    openSettingsBtn.addEventListener('click', () => {
+        if (chrome.runtime.openOptionsPage) {
+            chrome.runtime.openOptionsPage();
+        } else {
+            window.open(chrome.runtime.getURL('src/settings/settings.html'));
+        }
+    });
+}
+
+// Voice mic button for context input
+const contextMicBtn = document.getElementById('contextMicBtn');
+const contextMicTimer = document.getElementById('contextMicTimer');
+let contextMicState = 'idle'; // idle | recording | ready | processing
+let contextMicTimerInterval = null;
+
+const MAX_REC_TIME = 120;
+
+function formatTime(secs) {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function showContextTimer(show) {
+    contextMicTimer.classList.toggle('show', show);
+}
+
+function startContextMicTimer() {
+    let remaining = MAX_REC_TIME;
+    contextMicTimer.textContent = formatTime(remaining);
+    contextMicTimerInterval = setInterval(() => {
+        remaining--;
+        contextMicTimer.textContent = formatTime(remaining);
+        if (remaining <= 0) {
+            clearInterval(contextMicTimerInterval);
+            contextMicTimerInterval = null;
+            showContextTimer(false);
+            contextMicBtn.click();
+        }
+    }, 1000);
+}
+
+function stopContextMicTimer() {
+    if (contextMicTimerInterval) {
+        clearInterval(contextMicTimerInterval);
+        contextMicTimerInterval = null;
+    }
+    showContextTimer(false);
+    setTimeout(() => { contextMicTimer.textContent = ''; }, 300);
+}
+
+async function handleContextMicClick() {
+    if (contextMicState === 'idle') {
+        const a = new Audio(chrome.runtime.getURL('assets/record.wav'));
+        a.volume = 0.3;
+        a.play().catch(() => {});
+        contextMicState = 'recording';
+        contextMicBtn.classList.add('recording');
+        startContextMicTimer();
+        const r = await VoiceClient.start();
+        if (!r || !r.ok) {
+            contextMicState = 'idle';
+            contextMicBtn.classList.remove('recording');
+            stopContextMicTimer();
+            alert('Could not start recording: ' + ((r && r.error) || 'unknown'));
+        } else {
+            setTimeout(() => {
+                if (contextMicState === 'recording') {
+                    contextMicBtn.classList.remove('recording');
+                    contextMicBtn.classList.add('ready');
+                    contextMicState = 'ready';
+                    showContextTimer(true);
+                }
+            }, 400);
+        }
+    } else if (contextMicState === 'recording' || contextMicState === 'ready') {
+        stopContextMicTimer();
+        contextMicState = 'processing';
+        contextMicBtn.classList.remove('recording', 'ready');
+        contextMicBtn.classList.add('processing');
+        const r = await VoiceClient.stopAndTranscribe();
+        contextMicState = 'idle';
+        contextMicBtn.classList.remove('processing');
+        if (r && r.ok && r.text) {
+            const cur = contextInput.value.trim();
+            contextInput.value = cur ? cur + ' ' + r.text : r.text;
+            contextInput.focus();
+        } else {
+            alert('Error: ' + ((r && r.error) || 'no text'));
+        }
+    }
+}
+
+if (contextMicBtn) {
+    contextMicBtn.addEventListener('click', handleContextMicClick);
+}
 
 // Connect to background script to signal that the side panel is open
-// We include the windowId in the name to track which window has the side panel open
 chrome.windows.getCurrent((window) => {
     chrome.runtime.connect({ name: `sidepanel-${window.id}` });
 });
