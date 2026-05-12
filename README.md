@@ -5,8 +5,8 @@
 </p>
 
 <p align="center">
-  <strong>從網頁畫面到 AI 指令，一鍵完成。</strong><br>
-  提取 CSS 選擇器與 HTML，轉換為 AI-ready 的修改指令。
+  <strong>從網頁到 AI Prompt，一鍵完成。</strong><br>
+  擷取 CSS selector、HTML、Context 與 Network Request，整理成適合 AI Coding Agent 使用的 Markdown Prompt。
 </p>
 
 <p align="center">
@@ -16,75 +16,108 @@
 </p>
 
 <p align="center">
-  繁體中文 ·
   <a href="README_EN.md">English</a>
 </p>
 
 ---
 
-## ✨ 功能特色
+## 功能
 
-- 🎯 **元素選取** — 懸停高亮任意網頁元素，點擊即可選取
-- 📝 **智慧註解** — 為選取的元素添加修改建議或備註
-- 📋 **一鍵匯出** — 將註解與上下文資訊轉換為 Markdown 格式 AI Prompt
-- 🗂️ **Side Panel 管理** — 集中查看、管理所有已標記的註解
-- ⌨️ **快捷鍵支援** — 透過 Alt+O / Alt+L / Alt+X 快速操作
+- **元素選取**：滑過元素會顯示高亮框，點擊即可建立註解
+- **快速註解**：為選取的 UI 元素新增修改說明
+- **一鍵匯出**：將註解與頁面 Context 轉成 Markdown Prompt
+- **Side Panel 管理**：集中檢視、拖曳排序與編輯所有註解
+- **Network Capture**：擷取網路請求並一起加入 Prompt
+- **語音輸入**：在註解視窗與 Context 區使用麥克風輸入
+- **快捷鍵操作**：支援 `Alt+O` / `Alt+L` / `Alt+N` / `Alt+C` / `Alt+X`
+- **快捷鍵音效開關**：可在設定頁控制快捷鍵觸發的音效是否播放
 
-## 🎬 使用情境
+## 適用情境
 
-使用 UISelector2AI，你可以快速在任何網頁上標記需要修改的 UI 元素，添加具體的修改說明，然後一鍵將所有資訊導出為 AI 友好的 Prompt。這大幅簡化了與 AI Coding Agent（如 Claude、Cursor、ChatGPT）之間的溝通。
+UISelector2AI 適合在需要和 AI Coding Agent 溝通 UI 修改需求時使用。  
+你可以直接在頁面上標記元素、補充修改說明、擷取網路請求，最後輸出成適合 Claude、Cursor、ChatGPT 等工具閱讀的 Prompt。
 
-## 📦 安裝方式
+## 安裝
 
-### 從原始碼安裝（開發者模式）
+### 以原始碼安裝
 
-1. Clone 此 Repository：
+1. 下載或 clone 這個 repository
    ```bash
    git clone https://github.com/benxuhuang/UISelector2AI.git
    ```
-2. 開啟 Chrome 瀏覽器，前往 `chrome://extensions/`
-3. 開啟右上角的「**開發人員模式**」
-4. 點擊「**載入未封裝擴充功能**」
-5. 選取 Clone 下來的專案根目錄
+2. 開啟 Chrome，進入 `chrome://extensions/`
+3. 開啟右上角 **Developer mode**
+4. 點選 **Load unpacked**
+5. 選擇專案根目錄 `UISelector2AI`
 
-## 🚀 快速開始
+## 快速開始
 
-1. 點擊瀏覽器工具列中的 UISelector2AI 圖示
-2. 點擊 **Start Inspect** 啟動選取模式（或按 `Alt+O`）
-3. 滑鼠移至網頁元素上方，將看到藍色高亮邊框
-4. 點擊目標元素，在彈出輸入框中輸入修改建議
-5. 開啟 **Side Panel**（`Alt+L`）管理所有註解
-6. 點擊 **Copy Prompt** 一鍵匯出 AI 可讀的 Markdown
+1. 點選瀏覽器工具列上的 UISelector2AI 圖示
+2. 按 **Start Inspect** 或使用 `Alt+O` 開啟選取模式
+3. 將滑鼠移到目標元素上，確認高亮框出現
+4. 點擊元素後輸入修改說明並儲存
+5. 需要整體管理時，開啟 **Side Panel** 或使用 `Alt+L`
+6. 若要擷取 API 請求，按 **Network Capture** 或使用 `Alt+N`
+7. 按 **Copy Prompt** 將目前內容匯出成 Markdown Prompt
+8. 按 **Clear All Annotations** 或使用 `Alt+X` 清空目前頁面的註解
 
-## 🛠 技術架構
+## 設定頁
 
-| 元件 | 說明 |
-|------|------|
-| **Manifest** | Chrome Extension Manifest V3 |
-| **Background** | Service Worker，管理擴充功能狀態與快捷鍵 |
-| **Content Script** | DOM 監聽、元素高亮、註解輸入框 UI |
-| **Popup** | 功能快捷按鈕介面 |
-| **Side Panel** | 註解列表管理與 Prompt 匯出 |
+從 Popup 或 Side Panel 的設定入口可以開啟設定頁。  
+目前可設定的項目包含：
 
-```
-agentation-chrom-extension/
-├── manifest.json              # 擴充功能設定
+- **Speech-to-Text**
+  - Provider：Groq / OpenAI / OpenRouter / Custom
+  - API Key、Base URL、Model、Language
+- **LLM Refiner**
+  - 可選擇是否啟用
+  - Provider、API Key、Base URL、Model、System Prompt
+- **快捷鍵音效**
+  - 可開啟或關閉快捷鍵觸發的音效
+
+設定頁也提供：
+
+- **Test STT**
+- **Test LLM**
+- 底部的 **Save** 按鈕
+
+## 快捷鍵
+
+| 快捷鍵 | 功能 |
+|--------|------|
+| `Alt+O` | 切換 Inspect Mode |
+| `Alt+L` | 開關 Side Panel |
+| `Alt+N` | 開關 Network Capture |
+| `Alt+C` | 複製 Prompt |
+| `Alt+X` | 清除目前頁面的註解 |
+
+## 專案結構
+
+```text
+UISelector2AI/
+├── manifest.json
 ├── src/
-│   ├── background.js          # Service Worker
-│   ├── content.js             # Content Script（DOM 互動核心）
-│   ├── styles.css             # Content Script 注入樣式
-│   ├── ui.css                 # UI 元件共用樣式
-│   ├── popup/                 # Popup 介面
+│   ├── background.js
+│   ├── content.js
+│   ├── interceptor.js
+│   ├── offscreen/
+│   │   ├── offscreen.html
+│   │   └── offscreen.js
+│   ├── popup/
 │   │   ├── popup.html
 │   │   └── popup.js
-│   └── sidepanel/             # Side Panel 介面
+│   ├── settings/
+│   │   ├── settings.html
+│   │   └── settings.js
+│   └── sidepanel/
 │       ├── sidepanel.html
 │       └── sidepanel.js
-├── icons/                     # 擴充功能圖示
-└── store_assets/              # Chrome Web Store 發布資源
+├── assets/
+├── icons/
+└── README.md
 ```
 
-## 📄 匯出格式範例
+## 匯出格式範例
 
 ```markdown
 # Webpage Context
@@ -95,7 +128,7 @@ Viewport: 1920x1080
 
 ## Annotation 1
 **Target**: `button.primary-btn`
-**Feedback**: 這裡的按鈕顏色太淡了，請改成深藍色 (#0056b3)。
+**Feedback**: 請把按鈕顏色改成深藍色 (#0056b3)。
 **Current Styles**:
 - background-color: #e0e0e0
 - color: #333
@@ -103,10 +136,11 @@ Viewport: 1920x1080
 `<button class="primary-btn">Submit</button>`
 ```
 
-## 🤝 貢獻
+## 貢獻
 
-歡迎任何形式的貢獻！請閱讀 [CONTRIBUTING.md](CONTRIBUTING.md) 了解詳細的貢獻流程。
+歡迎各種形式的貢獻。  
+如需參與開發，請參考 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
-## 📜 授權
+## 授權
 
-本專案採用 [MIT License](LICENSE) 授權。
+本專案採用 [MIT License](LICENSE)。

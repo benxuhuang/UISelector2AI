@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>From webpage to AI prompt, in one click.</strong><br>
-  Extract CSS selectors and HTML, convert them into AI-ready prompts for UI modifications.
+  Capture selectors, HTML, page context, and network requests, then turn them into a clean Markdown prompt for AI coding agents.
 </p>
 
 <p align="center">
@@ -16,75 +16,107 @@
 </p>
 
 <p align="center">
-  <a href="README.md">繁體中文</a> ·
-  English
+  <a href="README.md">中文</a>
 </p>
 
 ---
 
-## ✨ Features
+## Features
 
-- 🎯 **Element Selection** — Hover to highlight any web element, click to select
-- 📝 **Smart Annotations** — Add modification notes to selected elements
-- 📋 **One-Click Export** — Convert annotations and context into Markdown AI prompts
-- 🗂️ **Side Panel Management** — View and manage all annotations in one place
-- ⌨️ **Keyboard Shortcuts** — Quick actions via Alt+O / Alt+L / Alt+X
+- **Element selection**: hover to highlight any web element, click to select
+- **Smart annotations**: add modification notes to selected UI elements
+- **One-click export**: convert annotations and page context into a Markdown prompt
+- **Side Panel management**: review, edit, and drag-sort all annotations in one place
+- **Network capture**: capture API requests and include them in the exported prompt
+- **Voice input**: dictate annotation text and page context with the microphone
+- **Keyboard shortcuts**: `Alt+O` / `Alt+L` / `Alt+N` / `Alt+C` / `Alt+X`
+- **Shortcut sound toggle**: enable or disable sound effects triggered by shortcuts
 
-## 🎬 Use Case
+## Use Case
 
-With UISelector2AI, you can quickly mark UI elements on any webpage that need modification, add specific instructions, and export all the information as an AI-friendly prompt with a single click. This greatly simplifies communication with AI Coding Agents (Claude, Cursor, ChatGPT, etc.).
+UISelector2AI is useful when you need to communicate UI changes to an AI coding agent.  
+You can mark elements on a page, add clear instructions, capture network requests, and export everything as a Markdown prompt that Claude, Cursor, ChatGPT, and similar tools can read easily.
 
-## 📦 Installation
+## Installation
 
-### From Source (Developer Mode)
+### From Source
 
 1. Clone this repository:
    ```bash
    git clone https://github.com/benxuhuang/UISelector2AI.git
    ```
 2. Open Chrome and navigate to `chrome://extensions/`
-3. Enable **Developer mode** (top-right toggle)
+3. Enable **Developer mode**
 4. Click **Load unpacked**
-5. Select the cloned project root directory
+5. Select the project root folder `UISelector2AI`
 
-## 🚀 Quick Start
+## Quick Start
 
 1. Click the UISelector2AI icon in the browser toolbar
-2. Click **Start Inspect** to activate selection mode (or press `Alt+O`)
-3. Hover over web elements to see a blue highlight border
-4. Click a target element and enter your modification in the popup input
-5. Open the **Side Panel** (`Alt+L`) to manage all annotations
-6. Click **Copy Prompt** to export an AI-readable Markdown prompt
+2. Click **Start Inspect** or press `Alt+O` to enable inspect mode
+3. Hover over elements to see the highlight box
+4. Click a target element and enter your instruction
+5. Open the **Side Panel** or press `Alt+L` to manage annotations
+6. Use **Network Capture** or press `Alt+N` to capture requests
+7. Click **Copy Prompt** to export a Markdown prompt
+8. Click **Clear All Annotations** or press `Alt+X` to clear the current page annotations
 
-## 🛠 Architecture
+## Settings Page
 
-| Component | Description |
-|-----------|-------------|
-| **Manifest** | Chrome Extension Manifest V3 |
-| **Background** | Service Worker for extension state and shortcuts |
-| **Content Script** | DOM listeners, element highlighting, annotation UI |
-| **Popup** | Quick-action button interface |
-| **Side Panel** | Annotation list management and prompt export |
+The settings page includes the following sections:
 
-```
-agentation-chrom-extension/
-├── manifest.json              # Extension configuration
+- **Speech-to-Text**
+  - Provider: Groq / OpenAI / OpenRouter / Custom
+  - API Key, Base URL, Model, and Language
+- **LLM Refiner**
+  - Optional enable/disable toggle
+  - Provider, API Key, Base URL, Model, and System Prompt
+- **Shortcut sound effects**
+  - Toggle whether shortcut-triggered sound effects should play
+
+The settings page also provides:
+
+- **Test STT**
+- **Test LLM**
+- A **Save** button fixed at the bottom of the page
+
+## Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Alt+O` | Toggle Inspect Mode |
+| `Alt+L` | Toggle Side Panel |
+| `Alt+N` | Toggle Network Capture |
+| `Alt+C` | Copy Prompt |
+| `Alt+X` | Clear current page annotations |
+
+## Project Structure
+
+```text
+UISelector2AI/
+├── manifest.json
 ├── src/
-│   ├── background.js          # Service Worker
-│   ├── content.js             # Content Script (core DOM interaction)
-│   ├── styles.css             # Content Script injected styles
-│   ├── ui.css                 # Shared UI component styles
-│   ├── popup/                 # Popup interface
+│   ├── background.js
+│   ├── content.js
+│   ├── interceptor.js
+│   ├── offscreen/
+│   │   ├── offscreen.html
+│   │   └── offscreen.js
+│   ├── popup/
 │   │   ├── popup.html
 │   │   └── popup.js
-│   └── sidepanel/             # Side Panel interface
+│   ├── settings/
+│   │   ├── settings.html
+│   │   └── settings.js
+│   └── sidepanel/
 │       ├── sidepanel.html
 │       └── sidepanel.js
-├── icons/                     # Extension icons
-└── store_assets/              # Chrome Web Store publishing assets
+├── assets/
+├── icons/
+└── README_EN.md
 ```
 
-## 📄 Export Format Example
+## Export Format Example
 
 ```markdown
 # Webpage Context
@@ -95,7 +127,7 @@ Viewport: 1920x1080
 
 ## Annotation 1
 **Target**: `button.primary-btn`
-**Feedback**: The button color is too light, please change it to dark blue (#0056b3).
+**Feedback**: Please change the button color to dark blue (#0056b3).
 **Current Styles**:
 - background-color: #e0e0e0
 - color: #333
@@ -103,10 +135,11 @@ Viewport: 1920x1080
 `<button class="primary-btn">Submit</button>`
 ```
 
-## 🤝 Contributing
+## Contributing
 
-Contributions of all kinds are welcome! Please read [CONTRIBUTING_EN.md](CONTRIBUTING_EN.md) for details on how to contribute.
+Contributions of all kinds are welcome.  
+Please read [CONTRIBUTING_EN.md](CONTRIBUTING_EN.md) for details.
 
-## 📜 License
+## License
 
 This project is licensed under the [MIT License](LICENSE).
